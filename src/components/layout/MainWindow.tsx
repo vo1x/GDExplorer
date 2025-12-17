@@ -18,8 +18,8 @@ export function MainWindow() {
       <TitleBar />
 
       {/* Main Content Area */}
-      <div className="flex flex-1 overflow-hidden">
-        <MainWindowContent />
+      <div className="flex-1 overflow-hidden">
+        <MainWindowContent className="w-full" />
       </div>
 
       {/* Global UI Components (hidden until triggered) */}

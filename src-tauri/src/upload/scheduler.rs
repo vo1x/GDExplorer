@@ -2,14 +2,13 @@ use crate::upload::drive_client::DriveClient;
 use crate::upload::events::{CompletedEvent, ItemStatusEvent, ProgressEvent, Summary};
 use crate::upload::mirror::{build_tasks_for_item, read_file_chunk, FolderAggregate, UploadTask};
 use crate::upload::sa_loader::load_service_accounts;
-use futures::stream::{FuturesUnordered, StreamExt};
 use reqwest::Client;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
-use tokio::sync::{Mutex, Semaphore};
+use tokio::sync::{mpsc, Mutex};
 
 pub fn build_drive_pool(service_account_folder: &str) -> Result<DrivePool, String> {
     let folder = PathBuf::from(service_account_folder);
@@ -76,10 +75,59 @@ pub async fn run_upload_job_with_pool(
     queue: Vec<QueueItemInput>,
     destination_folder_id: String,
 ) -> Result<(), String> {
-    // Preparing: build tasks for each top-level item, creating Drive folders as needed.
+    // Preparing: build tasks and stream them into a bounded worker pool.
     let per_item_totals: Arc<Mutex<HashMap<String, u64>>> = Arc::new(Mutex::new(HashMap::new()));
     let per_item_sent: Arc<Mutex<HashMap<String, u64>>> = Arc::new(Mutex::new(HashMap::new()));
     let per_item_failed: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
+
+    let mut folder_aggregates: HashMap<String, FolderAggregate> = HashMap::new();
+
+    let concurrency = max_concurrent.clamp(1, 10) as usize;
+    let (tx, rx) = mpsc::channel::<UploadTask>(concurrency.saturating_mul(2).max(8));
+    let rx = Arc::new(Mutex::new(rx));
+
+    let mut worker_handles = Vec::with_capacity(concurrency);
+    for _ in 0..concurrency {
+        let app = app.clone();
+        let pool = pool.clone();
+        let rx = rx.clone();
+        let per_item_totals = per_item_totals.clone();
+        let per_item_sent = per_item_sent.clone();
+        let per_item_failed = per_item_failed.clone();
+
+        worker_handles.push(tokio::spawn(async move {
+            loop {
+                let task = {
+                    let mut guard = rx.lock().await;
+                    guard.recv().await
+                };
+                let Some(task) = task else { break };
+
+                let client = pool.next_client();
+                let sa_email = client.sa_email().to_string();
+                let result =
+                    upload_one_file(&client, &app, &task, per_item_totals.clone(), per_item_sent.clone())
+                        .await;
+                if let Err(e) = &result {
+                    let mut failed = per_item_failed.lock().await;
+                    failed.entry(task.top_item_id.clone()).or_insert_with(|| {
+                        format!("SA {sa_email}: {e}")
+                    });
+                    let _ = app.emit(
+                        "upload:item_status",
+                        ItemStatusEvent {
+                            item_id: task.top_item_id.clone(),
+                            path: task.top_item_path.clone(),
+                            kind: task.top_item_kind.clone(),
+                            status: "failed".to_string(),
+                            message: Some(e.clone()),
+                            sa_email: Some(sa_email.clone()),
+                        },
+                    );
+                }
+            }
+        }));
+    }
 
     for item in &queue {
         let _ = app.emit(
@@ -93,12 +141,7 @@ pub async fn run_upload_job_with_pool(
                 sa_email: Some(pool.first_email()),
             },
         );
-    }
 
-    let mut all_tasks: Vec<UploadTask> = Vec::new();
-    let mut folder_aggregates: HashMap<String, FolderAggregate> = HashMap::new();
-
-    for item in &queue {
         let (tasks, aggregate) =
             build_tasks_for_item(&pool, &destination_folder_id, &item.id, &item.path, &item.kind)
                 .await
@@ -126,10 +169,7 @@ pub async fn run_upload_job_with_pool(
             sent.insert(item.id.clone(), 0);
         }
 
-        all_tasks.extend(tasks);
-    }
-
-    for item in &queue {
+        // Mark as uploading once tasks are enqueued (folder mirroring has finished).
         let _ = app.emit(
             "upload:item_status",
             ItemStatusEvent {
@@ -141,49 +181,19 @@ pub async fn run_upload_job_with_pool(
                 sa_email: None,
             },
         );
+
+        for task in tasks {
+            // If workers have exited unexpectedly, this will error; treat it as fatal.
+            tx.send(task)
+                .await
+                .map_err(|e| format!("Failed to enqueue upload task: {e}"))?;
+        }
     }
 
-    // Upload: worker pool for file tasks.
-    let concurrency = max_concurrent.clamp(1, 10) as usize;
-    let semaphore = Arc::new(Semaphore::new(concurrency));
-
-    let mut futs = FuturesUnordered::new();
-
-    for task in all_tasks {
-        let permit = semaphore.clone().acquire_owned().await.unwrap();
-        let app = app.clone();
-        let pool = pool.clone();
-        let per_item_totals = per_item_totals.clone();
-        let per_item_sent = per_item_sent.clone();
-        let per_item_failed = per_item_failed.clone();
-
-        futs.push(tokio::spawn(async move {
-            let _permit = permit;
-            let client = pool.next_client();
-            let sa_email = client.sa_email().to_string();
-            let result = upload_one_file(&client, &app, &task, per_item_totals, per_item_sent).await;
-            if let Err(e) = &result {
-                let mut failed = per_item_failed.lock().await;
-                failed.entry(task.top_item_id.clone()).or_insert_with(|| {
-                    format!("SA {sa_email}: {e}")
-                });
-                let _ = app.emit(
-                    "upload:item_status",
-                    ItemStatusEvent {
-                        item_id: task.top_item_id.clone(),
-                        path: task.top_item_path.clone(),
-                        kind: task.top_item_kind.clone(),
-                        status: "failed".to_string(),
-                        message: Some(e.clone()),
-                        sa_email: Some(sa_email),
-                    },
-                );
-            }
-            result
-        }));
+    drop(tx);
+    for handle in worker_handles {
+        let _ = handle.await;
     }
-
-    while let Some(_res) = futs.next().await {}
 
     // Finalize per-item statuses.
     let failed_map = per_item_failed.lock().await.clone();

@@ -1,16 +1,18 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { listen } from '@tauri-apps/api/event'
-import { FileIcon, FolderIcon, Trash2Icon, XIcon } from 'lucide-react'
+import { Trash2Icon, XIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 import { useLocalUploadQueue } from '@/store/local-upload-queue-store'
 import { useUploadDestinationStore } from '@/store/upload-destination-store'
+import { TransferTable } from '@/components/transfers/TransferTable'
 import { toast } from 'sonner'
 import { logger } from '@/lib/logger'
 
@@ -21,25 +23,15 @@ function normalizeSelection(
   return Array.isArray(selection) ? selection : [selection]
 }
 
-function getPathName(path: string): string {
-  const normalized = path.replace(/[/\\]+$/g, '')
-  const parts = normalized.split(/[/\\]/)
-  return parts[parts.length - 1] || normalized
-}
-
 export function BrowseLocalFiles() {
-  const { items, addFiles, addFolders, remove, clear, setItemProgress, setItemStatus, resetUploadState } =
+  const { items, addFiles, addFolders, clear, setItemProgress, setItemStatus, resetUploadState } =
     useLocalUploadQueue()
   const { destinationUrl, destinationError, destinationFolderId, setDestinationUrl } =
     useUploadDestinationStore()
   const [isBrowsing, setIsBrowsing] = useState(false)
   const [isDropActive, setIsDropActive] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
-
-  const queueSummary = useMemo(() => {
-    if (items.length === 0) return 'No items in queue'
-    return items.length === 1 ? '1 item in queue' : `${items.length} items in queue`
-  }, [items.length])
+  const [errorBanner, setErrorBanner] = useState<string | null>(null)
 
   const startUploadDisabled =
     items.length === 0 || !destinationFolderId || destinationError || isUploading
@@ -76,6 +68,7 @@ export function BrowseLocalFiles() {
 
     setIsUploading(true)
     resetUploadState()
+    setErrorBanner(null)
 
     try {
       await invoke('start_upload', {
@@ -99,6 +92,7 @@ export function BrowseLocalFiles() {
     let unlistenStatus: (() => void) | null = null
     let unlistenProgress: (() => void) | null = null
     let unlistenCompleted: (() => void) | null = null
+    let unlistenErrorBanner: (() => void) | null = null
 
     const setup = async () => {
       unlistenStatus = await listen<{
@@ -132,6 +126,15 @@ export function BrowseLocalFiles() {
           description: `${succeeded}/${total} succeeded, ${failed} failed`,
         })
       })
+
+      unlistenErrorBanner = await listen<{
+        message: string
+        stage: string
+        saEmail?: string | null
+      }>('upload:error_banner', event => {
+        setIsUploading(false)
+        setErrorBanner(event.payload.message)
+      })
     }
 
     setup().catch(error => {
@@ -142,6 +145,7 @@ export function BrowseLocalFiles() {
       if (unlistenStatus) unlistenStatus()
       if (unlistenProgress) unlistenProgress()
       if (unlistenCompleted) unlistenCompleted()
+      if (unlistenErrorBanner) unlistenErrorBanner()
     }
   }, [resetUploadState, setItemProgress, setItemStatus])
 
@@ -169,7 +173,10 @@ export function BrowseLocalFiles() {
                 useLocalUploadQueue.getState().items.map(i => i.path)
               )
 
-              type ClassifiedPath = { path: string; kind: 'file' | 'folder' }
+              interface ClassifiedPath {
+                path: string
+                kind: 'file' | 'folder'
+              }
 
               try {
                 const classified = await invoke<ClassifiedPath[]>(
@@ -218,9 +225,31 @@ export function BrowseLocalFiles() {
   }, [])
 
   return (
-    <div className="h-full w-full overflow-auto">
-      <div className="mx-auto w-full max-w-5xl space-y-6 p-6">
-        <section className="mx-auto w-full max-w-3xl space-y-2">
+    <div className="flex h-full w-full flex-col overflow-hidden">
+      <div className="shrink-0 space-y-4 p-6">
+        {errorBanner ? (
+          <Alert variant="destructive">
+            <AlertTitle className="flex items-center justify-between gap-3">
+              <span>Upload blocked</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setErrorBanner(null)}
+                aria-label="Dismiss upload error"
+              >
+                <XIcon className="size-4" />
+              </Button>
+            </AlertTitle>
+            <AlertDescription>
+              <p className="whitespace-pre-wrap">{errorBanner}</p>
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
+        <div className="text-sm font-medium">File browser</div>
+
+        <section className="space-y-2">
           <Label htmlFor="destination-url">Destination folder URL</Label>
           <Input
             id="destination-url"
@@ -250,7 +279,7 @@ export function BrowseLocalFiles() {
         <section
           aria-label="Drop zone"
           className={cn(
-            'mx-auto w-full max-w-3xl rounded-md border border-dashed p-8 text-center transition-colors',
+            'w-full rounded-md border border-dashed p-8 text-center transition-colors',
             isDropActive ? 'border-primary bg-primary/5' : 'border-border bg-muted/20'
           )}
         >
@@ -262,8 +291,8 @@ export function BrowseLocalFiles() {
           </div>
         </section>
 
-        <section className="mx-auto flex w-full max-w-3xl flex-col items-center gap-3">
-          <div className="flex flex-wrap items-center justify-center gap-2">
+        <section className="flex flex-col items-start gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <Button type="button" onClick={handleBrowse} disabled={isBrowsing}>
               {isBrowsing ? 'Browsing…' : 'Browse…'}
             </Button>
@@ -283,80 +312,14 @@ export function BrowseLocalFiles() {
               {isUploading ? 'Uploading…' : 'Upload files'}
             </Button>
           </div>
-          <div className="text-sm text-muted-foreground">{queueSummary}</div>
         </section>
+      </div>
 
+      <Separator />
+
+      <div className="flex min-h-0 flex-1 flex-col gap-3 p-6">
         {items.length > 0 ? (
-          <section className="overflow-hidden rounded-md border">
-            <div className="grid grid-cols-[minmax(180px,1fr)_minmax(260px,2fr)_110px_140px_160px_80px] items-center gap-3 border-b bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground">
-              <div>Name</div>
-              <div>Path</div>
-              <div>Type</div>
-              <div>Status</div>
-              <div>Progress</div>
-              <div className="text-right">Actions</div>
-            </div>
-            <ul className="max-h-[55vh] overflow-auto">
-              {items.map(item => (
-                <li
-                  key={item.id}
-                  className="grid grid-cols-[minmax(180px,1fr)_minmax(260px,2fr)_110px_140px_160px_80px] items-start gap-3 border-b px-3 py-2 last:border-b-0"
-                >
-                  <div className="flex min-w-0 items-center gap-2">
-                    {item.kind === 'folder' ? (
-                      <FolderIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                    ) : (
-                      <FileIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                    )}
-                    <div className="truncate text-sm">
-                      {getPathName(item.path)}
-                    </div>
-                  </div>
-                  <div className="break-all text-sm text-muted-foreground">
-                    {item.path}
-                  </div>
-                  <div>
-                    <Badge
-                      variant={item.kind === 'folder' ? 'secondary' : 'default'}
-                    >
-                      {item.kind === 'folder' ? 'Folder' : 'File'}
-                    </Badge>
-                  </div>
-                  <div className="text-sm">
-                    {item.status ?? 'queued'}
-                    {item.status === 'failed' && item.message ? (
-                      <div className="mt-1 break-words text-xs text-destructive">
-                        {item.message}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    {typeof item.totalBytes === 'number' && item.totalBytes > 0 ? (
-                      <span>
-                        {Math.min(item.bytesSent ?? 0, item.totalBytes)}/
-                        {item.totalBytes} bytes
-                      </span>
-                    ) : item.status === 'done' ? (
-                      <span>Complete</span>
-                    ) : (
-                      <span>—</span>
-                    )}
-                  </div>
-                  <div className="flex justify-end gap-1">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => remove(item.path)}
-                      aria-label={`Remove ${item.path}`}
-                    >
-                      <XIcon className="size-4" />
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </section>
+          <TransferTable />
         ) : (
           <section className="rounded-md border border-dashed p-8 text-center">
             <div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-md bg-muted">
@@ -364,11 +327,11 @@ export function BrowseLocalFiles() {
             </div>
             <div className="text-sm font-medium">Upload queue is empty</div>
             <div className="mt-1 text-sm text-muted-foreground">
-              Click Browse… to add files and folders.
-            </div>
-          </section>
-        )}
-      </div>
-    </div>
-  )
+	              Click Browse… to add files and folders.
+	            </div>
+	          </section>
+	        )}
+	      </div>
+	    </div>
+	  )
 }
