@@ -10,6 +10,10 @@ on:
         required: true
         type: string
 
+concurrency:
+  group: gdexplorer-release
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -25,11 +29,16 @@ jobs:
           - platform: 'macos-latest'
             args: '--bundles app,dmg'
           - platform: 'windows-latest'
-            args: '--bundles msi,nsis'
+            args: '--bundles msi'
 
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Verify updater public key is configured
+        shell: bash
+        run: |
+          node -e "const c=require('./src-tauri/tauri.conf.json'); const k=c?.plugins?.updater?.pubkey; if(!k||k.includes('YOUR_UPDATER_PUBLIC_KEY_HERE')){ console.error('Updater pubkey is not configured in src-tauri/tauri.conf.json (plugins.updater.pubkey).'); process.exit(1);} console.log('Updater pubkey is configured.');"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
