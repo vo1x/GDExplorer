@@ -3,9 +3,6 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { listen } from '@tauri-apps/api/event'
-import { XIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { useLocalUploadQueue } from '@/store/local-upload-queue-store'
 import { useUploadDestinationStore } from '@/store/upload-destination-store'
 import { TransferTable } from '@/components/transfers/TransferTable'
@@ -35,7 +32,6 @@ export function BrowseLocalFiles() {
   const [isBrowsing, setIsBrowsing] = useState(false)
   const [isDropActive, setIsDropActive] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
-  const [errorBanner, setErrorBanner] = useState<string | null>(null)
 
   const handleBrowse = async () => {
     if (isBrowsing) return
@@ -106,7 +102,7 @@ export function BrowseLocalFiles() {
         saEmail?: string | null
       }>('upload:error_banner', event => {
         setIsUploading(false)
-        setErrorBanner(event.payload.message)
+        toast.error('Upload blocked', { description: event.payload.message })
       })
     }
 
@@ -239,7 +235,6 @@ export function BrowseLocalFiles() {
     }
 
     setIsUploading(true)
-    setErrorBanner(null)
 
     resetItemsUploadState(startable.map(i => i.id))
     for (const it of startable) {
@@ -283,28 +278,6 @@ export function BrowseLocalFiles() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
-      {/* <div className="shrink-0 space-y-4 p-6">
-        {errorBanner ? (
-          <Alert variant="destructive">
-            <AlertTitle className="flex items-center justify-between gap-3">
-              <span>Upload blocked</span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => setErrorBanner(null)}
-                aria-label="Dismiss upload error"
-              >
-                <XIcon className="size-4" />
-              </Button>
-            </AlertTitle>
-            <AlertDescription>
-              <p className="whitespace-pre-wrap">{errorBanner}</p>
-            </AlertDescription>
-          </Alert>
-        ) : null}
-      </div> */}
-
       <div className="flex min-h-0 flex-1 flex-col gap-3 p-6">
         <TransferTable
           isDropActive={isDropActive}

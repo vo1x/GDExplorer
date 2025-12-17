@@ -10,7 +10,7 @@ interface TitleBarProps {
   title?: string
 }
 
-export function TitleBar({ className, title = 'Tauri App' }: TitleBarProps) {
+export function TitleBar({ className, title = 'GDExplorer' }: TitleBarProps) {
   const { leftSidebarVisible, toggleLeftSidebar } = useUIStore()
   const commandContext = useCommandContext()
   return (

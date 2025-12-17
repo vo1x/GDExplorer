@@ -600,8 +600,8 @@ fn create_app_menu(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error
     log::info!("Setting up native menu system");
 
     // Build the main application submenu
-    let app_submenu = SubmenuBuilder::new(app, "Tauri Template")
-        .item(&MenuItemBuilder::with_id("about", "About Tauri Template").build(app)?)
+    let app_submenu = SubmenuBuilder::new(app, "GDExplorer")
+        .item(&MenuItemBuilder::with_id("about", "About GDExplorer").build(app)?)
         .separator()
         .item(&MenuItemBuilder::with_id("check-updates", "Check for Updates...").build(app)?)
         .separator()
@@ -611,11 +611,11 @@ fn create_app_menu(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error
                 .build(app)?,
         )
         .separator()
-        .item(&PredefinedMenuItem::hide(app, Some("Hide Tauri Template"))?)
+        .item(&PredefinedMenuItem::hide(app, Some("Hide GDExplorer"))?)
         .item(&PredefinedMenuItem::hide_others(app, None)?)
         .item(&PredefinedMenuItem::show_all(app, None)?)
         .separator()
-        .item(&PredefinedMenuItem::quit(app, Some("Quit Tauri Template"))?)
+        .item(&PredefinedMenuItem::quit(app, Some("Quit GDExplorer"))?)
         .build()?;
 
     // Build the View submenu

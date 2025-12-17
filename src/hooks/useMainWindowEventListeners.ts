@@ -78,7 +78,7 @@ export function useMainWindowEventListeners() {
           // Show simple about dialog
           const appVersion = '0.1.0' // Could be dynamic from package.json
           alert(
-            `Tauri Template App\n\nVersion: ${appVersion}\n\nBuilt with Tauri v2 + React + TypeScript`
+            `GDExplorer\n\nVersion: ${appVersion}\n\nBuilt with Tauri v2 + React + TypeScript`
           )
         }),
 
