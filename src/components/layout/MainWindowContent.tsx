@@ -13,6 +13,8 @@ export function MainWindowContent({
   children,
   className,
 }: MainWindowContentProps) {
+  const leftSidebarVisible = useUIStore(s => s.leftSidebarVisible)
+
   if (children) {
     return (
       <div className={cn('flex h-full flex-col bg-background', className)}>
@@ -20,8 +22,6 @@ export function MainWindowContent({
       </div>
     )
   }
-
-  const leftSidebarVisible = useUIStore(s => s.leftSidebarVisible)
 
   return (
     <div className={cn('flex h-full w-full bg-background', className)}>

@@ -24,12 +24,12 @@ interface TransferUiState {
   resumeAll: (ids: string[]) => void
   clearRemoved: (remainingIds: string[]) => void
 
-  tick: (items: Array<{
+  tick: (items: {
     id: string
     status?: UploadRuntimeStatus | null
     bytesSent?: number | null
     totalBytes?: number | null
-  }>) => void
+  }[]) => void
 }
 
 export const useTransferUiStore = create<TransferUiState>((set, get) => ({
@@ -53,12 +53,11 @@ export const useTransferUiStore = create<TransferUiState>((set, get) => ({
 
   resumeAll: ids =>
     set(state => {
-      let next = state.pausedById
-      for (const id of ids) {
-        if (next[id]) {
-          if (next === state.pausedById) next = { ...state.pausedById }
-          delete next[id]
-        }
+      if (ids.length === 0) return state
+      const remove = new Set(ids)
+      const next: Record<string, boolean> = {}
+      for (const [id, v] of Object.entries(state.pausedById)) {
+        if (!remove.has(id)) next[id] = v
       }
       return { pausedById: next }
     }),
@@ -145,8 +144,7 @@ export const useTransferUiStore = create<TransferUiState>((set, get) => ({
 
 function omitKey<T extends Record<string, unknown>>(obj: T, key: string): T {
   if (!(key in obj)) return obj
-  const next = { ...obj }
-  // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
-  delete next[key]
-  return next
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { [key]: _removed, ...rest } = obj as any
+  return rest as T
 }

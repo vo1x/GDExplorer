@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -19,22 +19,17 @@ export function DestinationPicker() {
     setDestinationUrl,
   } = useUploadDestinationStore()
   const { data: preferences } = usePreferences()
-  const [selectedPresetId, setSelectedPresetId] = useState<string>('custom')
 
   const destinationPresets = useMemo(
     () => preferences?.destinationPresets ?? [],
     [preferences?.destinationPresets]
   )
 
-  useEffect(() => {
-    if (!destinationUrl.trim()) {
-      setSelectedPresetId('custom')
-      return
-    }
-    const match = destinationPresets.find(
-      p => p.url.trim() === destinationUrl.trim()
-    )
-    setSelectedPresetId(match ? match.id : 'custom')
+  const selectedPresetId = useMemo(() => {
+    const url = destinationUrl.trim()
+    if (!url) return 'custom'
+    const match = destinationPresets.find(p => p.url.trim() === url)
+    return match ? match.id : 'custom'
   }, [destinationPresets, destinationUrl])
 
   return (
@@ -46,7 +41,6 @@ export function DestinationPicker() {
           <Select
             value={selectedPresetId}
             onValueChange={value => {
-              setSelectedPresetId(value)
               if (value === 'custom') return
               const preset = destinationPresets.find(p => p.id === value)
               if (preset) setDestinationUrl(preset.url)
@@ -97,4 +91,3 @@ export function DestinationPicker() {
     </section>
   )
 }
-

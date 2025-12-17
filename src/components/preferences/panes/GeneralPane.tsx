@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
@@ -39,27 +39,49 @@ export const GeneralPane: React.FC = () => {
   const { data: preferences } = usePreferences()
   const savePreferences = useSavePreferences()
 
-  const [serviceAccountFolder, setServiceAccountFolder] = useState<string>('')
+  const prefsKey = useMemo(() => {
+    if (!preferences) return 'loading'
+    return JSON.stringify({
+      serviceAccountFolderPath: preferences.serviceAccountFolderPath ?? '',
+      maxConcurrentUploads: preferences.maxConcurrentUploads ?? 3,
+      destinationPresets: preferences.destinationPresets ?? [],
+    })
+  }, [preferences])
+
+  if (!preferences) {
+    return <div className="text-sm text-muted-foreground">Loading…</div>
+  }
+
+  return (
+    <GeneralPaneForm
+      key={prefsKey}
+      preferences={preferences}
+      savePreferences={savePreferences}
+    />
+  )
+}
+
+const GeneralPaneForm: React.FC<{
+  preferences: NonNullable<ReturnType<typeof usePreferences>['data']>
+  savePreferences: ReturnType<typeof useSavePreferences>
+}> = ({ preferences, savePreferences }) => {
+  const [serviceAccountFolder, setServiceAccountFolder] = useState<string>(
+    () => preferences.serviceAccountFolderPath ?? ''
+  )
   const [lastSavedServiceAccountFolder, setLastSavedServiceAccountFolder] =
-    useState<string>('')
-  const [maxConcurrentInput, setMaxConcurrentInput] = useState<string>('3')
-  const [lastSavedMaxConcurrent, setLastSavedMaxConcurrent] = useState(3)
+    useState<string>(() => preferences.serviceAccountFolderPath ?? '')
+  const [maxConcurrentInput, setMaxConcurrentInput] = useState<string>(() =>
+    String(preferences.maxConcurrentUploads ?? 3)
+  )
+  const [lastSavedMaxConcurrent, setLastSavedMaxConcurrent] = useState(() =>
+    preferences.maxConcurrentUploads ?? 3
+  )
 
   const [destinationPresetsDraft, setDestinationPresetsDraft] = useState<
     DestinationPreset[]
-  >([])
+  >(() => preferences.destinationPresets ?? [])
   const [newPresetName, setNewPresetName] = useState('')
   const [newPresetUrl, setNewPresetUrl] = useState('')
-
-  useEffect(() => {
-    if (!preferences) return
-    const folder = preferences.serviceAccountFolderPath ?? ''
-    setServiceAccountFolder(folder)
-    setLastSavedServiceAccountFolder(folder)
-    setMaxConcurrentInput(String(preferences.maxConcurrentUploads ?? 3))
-    setLastSavedMaxConcurrent(preferences.maxConcurrentUploads ?? 3)
-    setDestinationPresetsDraft(preferences.destinationPresets ?? [])
-  }, [preferences])
 
   const maxConcurrentError = useMemo(() => {
     const trimmed = maxConcurrentInput.trim()

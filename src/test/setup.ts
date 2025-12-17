@@ -3,9 +3,15 @@ import { vi } from 'vitest'
 
 // Mock ResizeObserver for libraries like react-resizable-panels
 class ResizeObserverMock {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
+  observe() {
+    return
+  }
+  unobserve() {
+    return
+  }
+  disconnect() {
+    return
+  }
 }
 
 ;(globalThis as unknown as { ResizeObserver: typeof ResizeObserverMock }).ResizeObserver =

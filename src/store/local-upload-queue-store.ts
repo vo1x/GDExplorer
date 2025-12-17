@@ -18,7 +18,7 @@ export interface LocalUploadItem {
 interface LocalUploadQueueState {
   items: LocalUploadItem[]
 
-  addItems: (items: Array<Pick<LocalUploadItem, 'path' | 'kind'>>) => void
+  addItems: (items: Pick<LocalUploadItem, 'path' | 'kind'>[]) => void
   addFiles: (paths: string[]) => void
   addFolders: (paths: string[]) => void
   setItemStatus: (
@@ -36,7 +36,7 @@ interface LocalUploadQueueState {
 
 function addUniqueItems(
   existing: LocalUploadItem[],
-  incoming: Array<Pick<LocalUploadItem, 'path' | 'kind'>>
+  incoming: Pick<LocalUploadItem, 'path' | 'kind'>[]
 ): LocalUploadItem[] {
   if (incoming.length === 0) return existing
 

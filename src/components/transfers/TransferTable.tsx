@@ -38,7 +38,7 @@ type UploadRuntimeStatus =
   | 'done'
   | 'failed'
 
-type TransferRowData = {
+interface TransferRowData {
   id: string
   name: string
   kind: 'file' | 'folder'

@@ -220,7 +220,9 @@ export function BrowseLocalFiles() {
         })
         return
       }
-      invoke('pause_items', { itemIds: toResume, paused: false }).catch(() => {})
+      invoke('pause_items', { itemIds: toResume, paused: false }).catch(err => {
+        logger.debug('pause_items resume failed', { error: String(err) })
+      })
       for (const id of toResume) {
         setItemStatus(id, 'uploading', null, null)
       }
@@ -270,7 +272,9 @@ export function BrowseLocalFiles() {
 
     if (toPause.length === 0) return
 
-    invoke('pause_items', { itemIds: toPause, paused: true }).catch(() => {})
+    invoke('pause_items', { itemIds: toPause, paused: true }).catch(err => {
+      logger.debug('pause_items pause failed', { error: String(err) })
+    })
     for (const id of toPause) {
       setItemStatus(id, 'paused', null, null)
     }
