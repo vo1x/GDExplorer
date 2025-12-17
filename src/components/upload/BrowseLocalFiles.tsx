@@ -138,12 +138,12 @@ export function BrowseLocalFiles() {
 
   return (
     <div className="flex h-full w-full flex-col gap-6 p-6">
-      <header className="space-y-1">
+      {/* <header className="space-y-1">
         <h1 className="text-lg font-semibold">Browse local files</h1>
         <p className="text-sm text-muted-foreground">
           Select files, then folders (best cross-platform approximation for a mixed picker).
         </p>
-      </header>
+      </header> */}
 
       <section className="space-y-2">
         <Label htmlFor="destination-url">Destination folder URL</Label>
@@ -172,6 +172,18 @@ export function BrowseLocalFiles() {
         ) : null}
       </section>
 
+      <section
+        aria-label="Drop zone"
+        className={[
+          'rounded-md border border-dashed p-8 text-center transition-colors',
+          isDropActive
+            ? 'border-primary bg-primary/5'
+            : 'border-border bg-muted/20',
+        ].join(' ')}
+      >
+        <div className="text-base font-medium">Drop files &amp; folders here</div>
+        <div className="mt-1 text-sm text-muted-foreground">or use Browse…</div>
+      </section>
       <section className="flex items-center justify-between gap-3">
         <div className="text-sm text-muted-foreground">{queueSummary}</div>
         <div className="flex items-center gap-2">
@@ -191,20 +203,6 @@ export function BrowseLocalFiles() {
           </Button>
         </div>
       </section>
-
-      <section
-        aria-label="Drop zone"
-        className={[
-          'rounded-md border border-dashed p-8 text-center transition-colors',
-          isDropActive
-            ? 'border-primary bg-primary/5'
-            : 'border-border bg-muted/20',
-        ].join(' ')}
-      >
-        <div className="text-base font-medium">Drop files &amp; folders here</div>
-        <div className="mt-1 text-sm text-muted-foreground">or use Browse…</div>
-      </section>
-
       {items.length > 0 ? (
         <section className="overflow-hidden rounded-md border">
           <div className="grid grid-cols-[minmax(200px,1fr)_minmax(260px,2fr)_110px_80px] items-center gap-3 border-b bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground">
