@@ -8,6 +8,11 @@ export interface LocalUploadItem {
   path: string
   kind: LocalUploadItemKind
   addedAt: number
+  status?: 'queued' | 'preparing' | 'uploading' | 'done' | 'failed'
+  message?: string | null
+  bytesSent?: number
+  totalBytes?: number
+  saEmail?: string | null
 }
 
 interface LocalUploadQueueState {
@@ -16,6 +21,14 @@ interface LocalUploadQueueState {
   addItems: (items: Array<Pick<LocalUploadItem, 'path' | 'kind'>>) => void
   addFiles: (paths: string[]) => void
   addFolders: (paths: string[]) => void
+  setItemStatus: (
+    itemId: string,
+    status: LocalUploadItem['status'],
+    message?: string | null,
+    saEmail?: string | null
+  ) => void
+  setItemProgress: (itemId: string, bytesSent: number, totalBytes: number) => void
+  resetUploadState: () => void
   remove: (path: string) => void
   clear: () => void
 }
@@ -32,7 +45,7 @@ function addUniqueItems(
   for (const { path, kind } of incoming) {
     if (existingPaths.has(path)) continue
     existingPaths.add(path)
-    newItems.push({ id: path, path, kind, addedAt: Date.now() })
+    newItems.push({ id: path, path, kind, addedAt: Date.now(), status: 'queued' })
   }
 
   return existing.concat(newItems)
@@ -74,6 +87,48 @@ export const useLocalUploadQueue = create<LocalUploadQueueState>()(
           }),
           undefined,
           'addFolders'
+        ),
+
+      setItemStatus: (itemId, status, message = null, saEmail = null) =>
+        set(
+          state => ({
+            items: state.items.map(item =>
+              item.id === itemId
+                ? { ...item, status, message, saEmail }
+                : item
+            ),
+          }),
+          undefined,
+          'setItemStatus'
+        ),
+
+      setItemProgress: (itemId, bytesSent, totalBytes) =>
+        set(
+          state => ({
+            items: state.items.map(item =>
+              item.id === itemId
+                ? { ...item, bytesSent, totalBytes }
+                : item
+            ),
+          }),
+          undefined,
+          'setItemProgress'
+        ),
+
+      resetUploadState: () =>
+        set(
+          state => ({
+            items: state.items.map(item => ({
+              ...item,
+              status: 'queued',
+              message: null,
+              bytesSent: undefined,
+              totalBytes: undefined,
+              saEmail: null,
+            })),
+          }),
+          undefined,
+          'resetUploadState'
         ),
 
       remove: path =>

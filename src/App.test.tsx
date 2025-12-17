@@ -10,9 +10,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 describe('App', () => {
   it('renders main window layout', () => {
     render(<App />)
-    expect(
-      screen.getByRole('heading', { name: /browse local files/i })
-    ).toBeInTheDocument()
+    expect(screen.getByLabelText(/destination folder url/i)).toBeInTheDocument()
   })
 
   it('renders title bar with traffic light buttons', () => {

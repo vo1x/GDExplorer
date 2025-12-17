@@ -6,6 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Manager};
 
+mod upload;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum LocalPathKind {
@@ -17,6 +19,63 @@ enum LocalPathKind {
 struct ClassifiedPath {
     path: String,
     kind: LocalPathKind,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StartUploadArgs {
+    queue_items: Vec<upload::scheduler::QueueItemInput>,
+    destination_folder_id: String,
+}
+
+#[tauri::command]
+async fn start_upload(window: tauri::Window, args: StartUploadArgs) -> Result<(), String> {
+    let app = window.app_handle();
+    let preferences = load_preferences(app.clone()).await?;
+
+    let service_account_folder = preferences
+        .service_account_folder_path
+        .clone()
+        .ok_or_else(|| "Service Account folder path is not set in Preferences.".to_string())?;
+
+    let max_concurrent = preferences.max_concurrent_uploads;
+
+    let queue_items = args.queue_items;
+    let destination_folder_id = args.destination_folder_id;
+
+    // Build SA pool and run a preflight check in-command so we can return actionable errors to the UI.
+    let pool = upload::scheduler::build_drive_pool(&service_account_folder)?;
+    let preflight_client = pool.next_client();
+    if let Err(e) = upload::drive_ops::ensure_destination_folder_access(&preflight_client, &destination_folder_id).await {
+        let msg = e;
+        if msg.starts_with("Service Accounts can only upload to Shared Drives.") {
+            return Err(msg);
+        }
+        if msg.starts_with("Service Account is not a member of the Shared Drive.") {
+            return Err(msg);
+        }
+        return Err(format!(
+            "Service account {} does not have access to destination folder. {msg}",
+            preflight_client.sa_email()
+        ));
+    }
+
+    let app_for_task = app.clone();
+    tokio::spawn(async move {
+        if let Err(e) = upload::scheduler::run_upload_job_with_pool(
+            app_for_task,
+            pool,
+            max_concurrent,
+            queue_items,
+            destination_folder_id,
+        )
+        .await
+        {
+            log::error!("Upload job failed: {e}");
+        }
+    });
+
+    Ok(())
 }
 
 // Validation functions
@@ -569,7 +628,8 @@ pub fn run() {
             save_emergency_data,
             load_emergency_data,
             cleanup_old_recovery_files,
-            classify_paths
+            classify_paths,
+            start_upload
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

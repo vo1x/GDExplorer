@@ -1,6 +1,16 @@
 import '@testing-library/jest-dom'
 import { vi } from 'vitest'
 
+// Mock ResizeObserver for libraries like react-resizable-panels
+class ResizeObserverMock {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+;(globalThis as unknown as { ResizeObserver: typeof ResizeObserverMock }).ResizeObserver =
+  ResizeObserverMock
+
 // Mock matchMedia for tests
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
