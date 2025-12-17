@@ -1,6 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { type MouseEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { invoke } from '@tauri-apps/api/core'
+import {
+  flexRender,
+  getCoreRowModel,
+  type RowSelectionState,
+  useReactTable,
+} from '@tanstack/react-table'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,7 +19,10 @@ import {
 } from '@/components/ui/alert-dialog'
 import { useLocalUploadQueue } from '@/store/local-upload-queue-store'
 import { useTransferUiStore } from '@/store/transfer-ui-store'
-import { TransferRow } from './TransferRow'
+import { ProgressBar, type TransferState } from './ProgressBar'
+import { formatBytes, formatEta, formatSpeed } from './format'
+import { FileIcon, FolderIcon, AlertTriangleIcon } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 function getPathName(path: string): string {
   const normalized = path.replace(/[/\\]+$/g, '')
@@ -21,31 +30,136 @@ function getPathName(path: string): string {
   return parts[parts.length - 1] || normalized
 }
 
-export function TransferTable() {
+type UploadRuntimeStatus =
+  | 'queued'
+  | 'preparing'
+  | 'uploading'
+  | 'paused'
+  | 'done'
+  | 'failed'
+
+type TransferRowData = {
+  id: string
+  name: string
+  kind: 'file' | 'folder'
+  status: UploadRuntimeStatus
+  totalBytes: number | null
+  bytesSent: number | null
+  error: string | null
+  progressPct: number
+  progressState: TransferState
+  statusLabel: string
+  sizeLabel: string
+  speedLabel: string
+  etaLabel: string
+}
+
+export function TransferTable({
+  isDropActive,
+  onBrowse,
+  onStartSelected,
+  onPauseSelected,
+  isUploading,
+}: {
+  isDropActive: boolean
+  onBrowse: () => void
+  onStartSelected: (itemIds: string[]) => void
+  onPauseSelected: (itemIds: string[]) => void
+  isUploading: boolean
+}) {
   const items = useLocalUploadQueue(s => s.items)
-  const remove = useLocalUploadQueue(s => s.remove)
   const clear = useLocalUploadQueue(s => s.clear)
   const [clearDialogOpen, setClearDialogOpen] = useState(false)
   const [clearPending, setClearPending] = useState(false)
 
-  const pauseAll = useTransferUiStore(s => s.pauseAll)
-  const resumeAll = useTransferUiStore(s => s.resumeAll)
   const clearRemoved = useTransferUiStore(s => s.clearRemoved)
   const tick = useTransferUiStore(s => s.tick)
 
-  const rows = useMemo(
-    () =>
-      items.map(item => ({
+  const paused = useTransferUiStore(s => s.pausedById)
+  const metrics = useTransferUiStore(s => s.metricsById)
+
+  const rows = useMemo((): TransferRowData[] => {
+    return items.map(item => {
+      const runtime = (item.status ?? 'queued') as UploadRuntimeStatus
+      const rowPaused = Boolean(paused[item.id])
+      const rowMetrics = metrics[item.id]
+
+      const total =
+        typeof item.totalBytes === 'number' && item.totalBytes > 0
+          ? item.totalBytes
+          : 0
+      const sent =
+        typeof item.bytesSent === 'number' && item.bytesSent > 0
+          ? item.bytesSent
+          : 0
+
+      const progressState: TransferState =
+        runtime === 'done'
+          ? 'completed'
+          : runtime === 'failed'
+            ? 'failed'
+            : runtime === 'paused'
+              ? 'paused'
+              : rowPaused
+                ? 'paused'
+                : runtime === 'uploading' || runtime === 'preparing'
+                  ? 'uploading'
+                  : 'queued'
+
+      const rawPct = total > 0 ? (Math.min(sent, total) / total) * 100 : 0
+      const progressPct =
+        progressState === 'completed'
+          ? 100
+          : progressState === 'failed'
+            ? Math.min(99.9, rawPct)
+            : Math.min(99.9, rawPct)
+
+      const statusLabel =
+        runtime === 'preparing'
+          ? 'Preparing'
+          : progressState === 'uploading'
+            ? 'Uploading'
+            : progressState === 'paused'
+              ? 'Paused'
+              : progressState === 'completed'
+                ? 'Completed'
+                : progressState === 'failed'
+                  ? 'Failed'
+                  : 'Queued'
+
+      const speedLabel =
+        progressState === 'uploading'
+          ? formatSpeed(rowMetrics?.speedBytesPerSec ?? 0)
+          : progressState === 'paused'
+            ? '0 B/s'
+            : '—'
+
+      const etaLabel =
+        progressState === 'uploading'
+          ? formatEta(rowMetrics?.etaSeconds ?? null)
+          : progressState === 'paused'
+            ? '∞'
+            : '—'
+
+      const sizeLabel = total > 0 ? formatBytes(total) : '—'
+
+      return {
         id: item.id,
         name: getPathName(item.path),
         kind: item.kind,
-        status: (item.status ?? 'queued') as any,
+        status: runtime,
         totalBytes: item.totalBytes ?? null,
         bytesSent: item.bytesSent ?? null,
         error: item.message ?? null,
-      })),
-    [items]
-  )
+        progressPct,
+        progressState,
+        statusLabel,
+        sizeLabel,
+        speedLabel,
+        etaLabel,
+      }
+    })
+  }, [items, metrics, paused])
 
   useEffect(() => {
     clearRemoved(items.map(i => i.id))
@@ -65,7 +179,157 @@ export function TransferTable() {
     return () => clearInterval(interval)
   }, [items, tick])
 
-  const ids = useMemo(() => items.map(i => i.id), [items])
+  const hasAny = items.length > 0
+  const hasCompleted = items.some(i => i.status === 'done')
+
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
+  const lastIndexRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    const valid = new Set(items.map(i => i.id))
+    setRowSelection(prev => {
+      let changed = false
+      const next: RowSelectionState = {}
+      for (const [id, v] of Object.entries(prev)) {
+        if (v && valid.has(id)) next[id] = true
+        else changed = true
+      }
+      return changed ? next : prev
+    })
+  }, [items])
+
+  const table = useReactTable({
+    data: rows,
+    columns: [
+      {
+        header: 'Name',
+        accessorKey: 'name',
+        cell: ({ row }) => {
+          const item = row.original
+          return (
+            <div className="flex min-w-0 items-center gap-2">
+              {item.kind === 'folder' ? (
+                <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
+              ) : (
+                <FileIcon className="size-4 shrink-0 text-muted-foreground" />
+              )}
+              <div className="truncate font-medium">{item.name}</div>
+            </div>
+          )
+        },
+      },
+      {
+        header: 'Progress',
+        accessorKey: 'progressPct',
+        cell: ({ row }) => (
+          <ProgressBar
+            percent={row.original.progressPct}
+            state={row.original.progressState}
+          />
+        ),
+      },
+      {
+        header: 'Status',
+        accessorKey: 'statusLabel',
+        cell: ({ row }) => {
+          const item = row.original
+          const cls =
+            item.progressState === 'failed'
+              ? 'text-red-300'
+              : item.progressState === 'completed'
+                ? 'text-emerald-300'
+                : item.progressState === 'uploading'
+                  ? 'text-sky-200'
+                  : item.progressState === 'paused'
+                    ? 'text-yellow-200'
+                    : 'text-muted-foreground'
+
+          return (
+            <div className={['flex items-center gap-1 text-xs', cls].join(' ')}>
+              {item.progressState === 'failed' && item.error ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex items-center gap-1">
+                      <AlertTriangleIcon className="size-3.5" />
+                      {item.statusLabel}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" align="start">
+                    <div className="max-w-[420px] text-xs">{item.error}</div>
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                <span>{item.statusLabel}</span>
+              )}
+            </div>
+          )
+        },
+      },
+      {
+        header: 'Size',
+        accessorKey: 'sizeLabel',
+        cell: ({ row }) => (
+          <div className="text-xs tabular-nums text-muted-foreground">
+            {row.original.sizeLabel}
+          </div>
+        ),
+      },
+      {
+        header: 'Speed',
+        accessorKey: 'speedLabel',
+        cell: ({ row }) => (
+          <div className="text-xs tabular-nums text-muted-foreground">
+            {row.original.speedLabel}
+          </div>
+        ),
+      },
+      {
+        header: 'ETA',
+        accessorKey: 'etaLabel',
+        cell: ({ row }) => (
+          <div className="text-xs tabular-nums text-muted-foreground">
+            {row.original.etaLabel}
+          </div>
+        ),
+      },
+    ],
+    state: { rowSelection },
+    getRowId: row => row.id,
+    onRowSelectionChange: setRowSelection,
+    enableRowSelection: true,
+    getCoreRowModel: getCoreRowModel(),
+  })
+
+  const selectedIds = useMemo(
+    () => Object.keys(rowSelection).filter(id => rowSelection[id]),
+    [rowSelection]
+  )
+
+  const handleRowClick = (rowId: string, rowIndex: number, e: MouseEvent) => {
+    const isToggle = e.metaKey || e.ctrlKey
+    const isRange = e.shiftKey
+
+    if (isRange && lastIndexRef.current !== null) {
+      const start = Math.min(lastIndexRef.current, rowIndex)
+      const end = Math.max(lastIndexRef.current, rowIndex)
+      const next: RowSelectionState = isToggle ? { ...rowSelection } : {}
+      const all = table.getRowModel().rows
+      for (let i = start; i <= end; i++) {
+        const id = all[i]?.id
+        if (id) next[id] = true
+      }
+      setRowSelection(next)
+      return
+    }
+
+    lastIndexRef.current = rowIndex
+    if (isToggle) {
+      setRowSelection(prev => ({ ...prev, [rowId]: !prev[rowId] }))
+      return
+    }
+
+    setRowSelection({ [rowId]: true })
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
@@ -76,47 +340,60 @@ export function TransferTable() {
             type="button"
             variant="secondary"
             size="sm"
-            onClick={() => {
-              pauseAll(ids)
-              invoke('pause_upload', { paused: true }).catch(() => {})
-            }}
-            disabled={ids.length === 0}
+            onClick={onBrowse}
           >
-            Pause all
+            Browse…
+          </Button>
+          <Button
+            type="button"
+            variant="default"
+            size="sm"
+            onClick={() => onStartSelected(selectedIds)}
+            disabled={selectedIds.length === 0}
+          >
+            Start
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => onPauseSelected(selectedIds)}
+            disabled={selectedIds.length === 0 || !isUploading}
+            title={
+              selectedIds.length === 0
+                ? 'Select one or more rows'
+                : isUploading
+                  ? undefined
+                  : 'Nothing is uploading'
+            }
+          >
+            Pause
           </Button>
           <Button
             type="button"
             variant="secondary"
             size="sm"
             onClick={() => {
-              resumeAll(ids)
-              invoke('pause_upload', { paused: false }).catch(() => {})
-            }}
-            disabled={ids.length === 0}
-          >
-            Resume all
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              for (const item of items) {
-                if (item.status === 'done') remove(item.path)
+              // UI-only: clearing completed just removes completed rows.
+              // (Backend does not keep running tasks for completed items.)
+              const toRemove = items.filter(i => i.status === 'done')
+              for (const it of toRemove) {
+                // Remove by path via store method; import lazily to avoid extra selector.
+                useLocalUploadQueue.getState().remove(it.path)
               }
             }}
-            disabled={items.every(i => i.status !== 'done')}
+            disabled={!hasCompleted}
           >
-            Remove completed
+            Clear completed
           </Button>
           <Button
             type="button"
             variant="ghost"
             size="sm"
             onClick={() => setClearDialogOpen(true)}
-            disabled={items.length === 0}
+            disabled={!hasAny}
           >
-            Clear
+            Clear all
           </Button>
         </div>
       </div>
@@ -152,30 +429,58 @@ export function TransferTable() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <div className="min-h-0 flex-1 overflow-auto rounded-md border">
+      <div
+        className={[
+          'min-h-0 flex-1 overflow-auto rounded-md border',
+          isDropActive ? 'border-primary bg-primary/5' : 'border-border',
+        ].join(' ')}
+      >
         <div
           className="grid grid-cols-[minmax(220px,1.8fr)_minmax(180px,1.4fr)_110px_100px_110px_80px] items-center gap-3 border-b bg-muted/20 px-3 py-2 text-[11px] font-medium text-muted-foreground"
           role="row"
         >
-          <div role="columnheader">Name</div>
-          <div role="columnheader">Progress</div>
-          <div role="columnheader">Status</div>
-          <div role="columnheader">Size</div>
-          <div role="columnheader">Speed</div>
-          <div role="columnheader">ETA</div>
+          {table.getHeaderGroups().map(headerGroup =>
+            headerGroup.headers.map(header => (
+              <div key={header.id} role="columnheader">
+                {header.isPlaceholder
+                  ? null
+                  : flexRender(header.column.columnDef.header, header.getContext())}
+              </div>
+            ))
+          )}
         </div>
 
         {rows.length > 0 ? (
           <div role="rowgroup">
-            {rows.map(item => (
-              <TransferRow
-                key={item.id}
-                item={item}
-              />
+            {table.getRowModel().rows.map(row => (
+              <div
+                key={row.id}
+                role="row"
+                onClick={e => handleRowClick(row.id, row.index, e)}
+                className={[
+                  'group grid cursor-default grid-cols-[minmax(220px,1.8fr)_minmax(180px,1.4fr)_110px_100px_110px_80px] items-center gap-3 px-3 py-2 text-sm',
+                  row.index % 2 === 0 ? 'bg-background' : 'bg-muted/10',
+                  row.getIsSelected()
+                    ? 'bg-primary/12 outline outline-1 outline-primary/40'
+                    : '',
+                ].join(' ')}
+              >
+                {row.getVisibleCells().map(cell => (
+                  <div key={cell.id} role="cell" className="min-w-0">
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </div>
+                ))}
+              </div>
             ))}
           </div>
         ) : (
-          <div className="p-6 text-sm text-muted-foreground">No transfers</div>
+          <div className="flex h-[260px] flex-col items-center justify-center gap-3 p-6 text-center">
+            <div className="text-base font-medium">Drop files &amp; folders here</div>
+            <div className="text-sm text-muted-foreground">or click Browse…</div>
+            <Button type="button" onClick={onBrowse}>
+              Browse…
+            </Button>
+          </div>
         )}
       </div>
     </div>

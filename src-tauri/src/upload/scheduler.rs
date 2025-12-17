@@ -3,6 +3,7 @@ use crate::upload::events::{CompletedEvent, ItemStatusEvent, ProgressEvent, Summ
 use crate::upload::mirror::{build_tasks_for_item, read_file_chunk, FolderAggregate, UploadTask};
 use crate::upload::sa_loader::load_service_accounts;
 use reqwest::Client;
+use std::collections::HashSet;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -14,6 +15,7 @@ use tokio::sync::{mpsc, watch, Mutex};
 pub struct UploadControlHandle {
     pub cancel: Arc<std::sync::atomic::AtomicBool>,
     pub pause_rx: watch::Receiver<bool>,
+    pub paused_items_rx: watch::Receiver<HashSet<String>>,
 }
 
 impl UploadControlHandle {
@@ -197,13 +199,19 @@ pub async fn run_upload_job_with_pool(
         }
 
         // Mark as uploading once tasks are enqueued (folder mirroring has finished).
+        let should_pause = *control.pause_rx.borrow()
+            || control.paused_items_rx.borrow().contains(&item.id);
         let _ = app.emit(
             "upload:item_status",
             ItemStatusEvent {
                 item_id: item.id.clone(),
                 path: item.path.clone(),
                 kind: item.kind.clone(),
-                status: "uploading".to_string(),
+                status: if should_pause {
+                    "paused".to_string()
+                } else {
+                    "uploading".to_string()
+                },
                 message: None,
                 sa_email: None,
             },
@@ -306,7 +314,7 @@ async fn upload_one_file(
         if control.is_canceled() {
             return Err("Upload canceled".to_string());
         }
-        wait_if_paused(control).await?;
+        wait_if_paused(control, &task.top_item_id).await?;
 
         let chunk = read_file_chunk(&mut file, &mut buf, chunk_size).await?;
         if chunk.is_empty() {
@@ -347,23 +355,31 @@ async fn upload_one_file(
     Ok(())
 }
 
-async fn wait_if_paused(control: &UploadControlHandle) -> Result<(), String> {
+async fn wait_if_paused(control: &UploadControlHandle, item_id: &str) -> Result<(), String> {
     if control.is_canceled() {
         return Err("Upload canceled".to_string());
     }
 
-    let mut rx = control.pause_rx.clone();
-    if !*rx.borrow() {
+    let mut pause_all_rx = control.pause_rx.clone();
+    let mut paused_items_rx = control.paused_items_rx.clone();
+
+    let is_blocked = *pause_all_rx.borrow() || paused_items_rx.borrow().contains(item_id);
+    if !is_blocked {
         return Ok(());
     }
 
-    while *rx.borrow() {
+    while *pause_all_rx.borrow() || paused_items_rx.borrow().contains(item_id) {
         if control.is_canceled() {
             return Err("Upload canceled".to_string());
         }
-        rx.changed()
-            .await
-            .map_err(|_| "Pause channel closed".to_string())?;
+        tokio::select! {
+            r = pause_all_rx.changed() => {
+                r.map_err(|_| "Pause channel closed".to_string())?;
+            }
+            r = paused_items_rx.changed() => {
+                r.map_err(|_| "Pause channel closed".to_string())?;
+            }
+        }
     }
 
     Ok(())

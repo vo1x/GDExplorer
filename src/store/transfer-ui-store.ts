@@ -1,6 +1,12 @@
 import { create } from 'zustand'
 
-type UploadRuntimeStatus = 'queued' | 'preparing' | 'uploading' | 'done' | 'failed'
+type UploadRuntimeStatus =
+  | 'queued'
+  | 'preparing'
+  | 'uploading'
+  | 'paused'
+  | 'done'
+  | 'failed'
 
 export interface TransferMetrics {
   speedBytesPerSec: number
@@ -144,4 +150,3 @@ function omitKey<T extends Record<string, unknown>>(obj: T, key: string): T {
   delete next[key]
   return next
 }
-

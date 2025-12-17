@@ -8,7 +8,7 @@ export interface LocalUploadItem {
   path: string
   kind: LocalUploadItemKind
   addedAt: number
-  status?: 'queued' | 'preparing' | 'uploading' | 'done' | 'failed'
+  status?: 'queued' | 'preparing' | 'uploading' | 'paused' | 'done' | 'failed'
   message?: string | null
   bytesSent?: number
   totalBytes?: number
@@ -29,6 +29,7 @@ interface LocalUploadQueueState {
   ) => void
   setItemProgress: (itemId: string, bytesSent: number, totalBytes: number) => void
   resetUploadState: () => void
+  resetItemsUploadState: (itemIds: string[]) => void
   remove: (path: string) => void
   clear: () => void
 }
@@ -129,6 +130,30 @@ export const useLocalUploadQueue = create<LocalUploadQueueState>()(
           }),
           undefined,
           'resetUploadState'
+        ),
+
+      resetItemsUploadState: itemIds =>
+        set(
+          state => {
+            if (itemIds.length === 0) return state
+            const ids = new Set(itemIds)
+            return {
+              items: state.items.map(item =>
+                ids.has(item.id)
+                  ? {
+                      ...item,
+                      status: 'queued',
+                      message: null,
+                      bytesSent: undefined,
+                      totalBytes: undefined,
+                      saEmail: null,
+                    }
+                  : item
+              ),
+            }
+          },
+          undefined,
+          'resetItemsUploadState'
         ),
 
       remove: path =>

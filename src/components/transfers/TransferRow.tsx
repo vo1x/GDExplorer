@@ -5,7 +5,7 @@ import { ProgressBar, type TransferState } from './ProgressBar'
 import { formatBytes, formatEta, formatSpeed } from './format'
 import { useTransferUiStore } from '@/store/transfer-ui-store'
 
-type UploadRuntimeStatus = 'queued' | 'preparing' | 'uploading' | 'done' | 'failed'
+type UploadRuntimeStatus = 'queued' | 'preparing' | 'uploading' | 'paused' | 'done' | 'failed'
 
 export interface TransferRowItem {
   id: string
@@ -35,6 +35,8 @@ export const TransferRow = memo(function TransferRow({
         ? 'completed'
         : runtime === 'failed'
           ? 'failed'
+          : runtime === 'paused'
+            ? 'paused'
           : paused
             ? 'paused'
             : runtime === 'uploading'

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Settings, Palette, Zap } from 'lucide-react'
+import { Settings, Palette } from 'lucide-react'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -28,7 +28,7 @@ import { useUIStore } from '@/store/ui-store'
 import { GeneralPane } from './panes/GeneralPane'
 import { AppearancePane } from './panes/AppearancePane'
 
-type PreferencePane = 'general' | 'appearance' | 'advanced'
+type PreferencePane = 'general' | 'appearance'
 
 const navigationItems = [
   {

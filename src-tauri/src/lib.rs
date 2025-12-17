@@ -1,6 +1,7 @@
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
@@ -14,14 +15,17 @@ struct UploadControlState(tokio::sync::Mutex<Option<UploadControl>>);
 struct UploadControl {
     cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pause_tx: tokio::sync::watch::Sender<bool>,
+    paused_items_tx: tokio::sync::watch::Sender<HashSet<String>>,
 }
 
 impl UploadControl {
     fn new() -> Self {
         let (pause_tx, _pause_rx) = tokio::sync::watch::channel(false);
+        let (paused_items_tx, _paused_items_rx) = tokio::sync::watch::channel(HashSet::new());
         Self {
             cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             pause_tx,
+            paused_items_tx,
         }
     }
 
@@ -35,10 +39,28 @@ impl UploadControl {
         let _ = self.pause_tx.send(paused);
     }
 
+    fn set_items_paused(&self, item_ids: &[String], paused: bool) {
+        if item_ids.is_empty() {
+            return;
+        }
+        let mut next = self.paused_items_tx.borrow().clone();
+        if paused {
+            for id in item_ids {
+                next.insert(id.clone());
+            }
+        } else {
+            for id in item_ids {
+                next.remove(id);
+            }
+        }
+        let _ = self.paused_items_tx.send(next);
+    }
+
     fn handle(&self) -> upload::scheduler::UploadControlHandle {
         upload::scheduler::UploadControlHandle {
             cancel: self.cancel.clone(),
             pause_rx: self.pause_tx.subscribe(),
+            paused_items_rx: self.paused_items_tx.subscribe(),
         }
     }
 }
@@ -141,6 +163,20 @@ async fn pause_upload(state: State<'_, UploadControlState>, paused: bool) -> Res
         return Ok(());
     };
     control.set_paused(paused);
+    Ok(())
+}
+
+#[tauri::command]
+async fn pause_items(
+    state: State<'_, UploadControlState>,
+    item_ids: Vec<String>,
+    paused: bool,
+) -> Result<(), String> {
+    let guard = state.0.lock().await;
+    let Some(control) = guard.as_ref() else {
+        return Ok(());
+    };
+    control.set_items_paused(&item_ids, paused);
     Ok(())
 }
 
@@ -735,6 +771,7 @@ pub fn run() {
             classify_paths,
             start_upload,
             pause_upload,
+            pause_items,
             cancel_upload
         ])
         .run(tauri::generate_context!())

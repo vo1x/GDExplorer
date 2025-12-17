@@ -3,13 +3,7 @@ import { MacOSWindowControls } from './MacOSWindowControls'
 import { Button } from '@/components/ui/button'
 import { useUIStore } from '@/store/ui-store'
 import { executeCommand, useCommandContext } from '@/lib/commands'
-import {
-  PanelLeft,
-  PanelLeftClose,
-  PanelRight,
-  PanelRightClose,
-  Settings,
-} from 'lucide-react'
+import { PanelLeft, PanelLeftClose, Settings } from 'lucide-react'
 
 interface TitleBarProps {
   className?: string
@@ -17,12 +11,7 @@ interface TitleBarProps {
 }
 
 export function TitleBar({ className, title = 'Tauri App' }: TitleBarProps) {
-  const {
-    leftSidebarVisible,
-    rightSidebarVisible,
-    toggleLeftSidebar,
-    toggleRightSidebar,
-  } = useUIStore()
+  const { leftSidebarVisible, toggleLeftSidebar } = useUIStore()
   const commandContext = useCommandContext()
   return (
     <div
@@ -71,22 +60,6 @@ export function TitleBar({ className, title = 'Tauri App' }: TitleBarProps) {
           title="Settings"
         >
           <Settings className="h-3 w-3" />
-        </Button>
-
-        <Button
-          onClick={toggleRightSidebar}
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6 text-foreground/70 hover:text-foreground"
-          title={
-            rightSidebarVisible ? 'Hide Right Sidebar' : 'Show Right Sidebar'
-          }
-        >
-          {rightSidebarVisible ? (
-            <PanelRightClose className="h-3 w-3" />
-          ) : (
-            <PanelRight className="h-3 w-3" />
-          )}
         </Button>
       </div>
     </div>

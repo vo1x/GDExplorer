@@ -1,28 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { listen } from '@tauri-apps/api/event'
-import { Trash2Icon, XIcon } from 'lucide-react'
+import { XIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Separator } from '@/components/ui/separator'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { cn } from '@/lib/utils'
 import { useLocalUploadQueue } from '@/store/local-upload-queue-store'
 import { useUploadDestinationStore } from '@/store/upload-destination-store'
 import { TransferTable } from '@/components/transfers/TransferTable'
 import { toast } from 'sonner'
 import { logger } from '@/lib/logger'
-import { usePreferences } from '@/services/preferences'
 
 function normalizeSelection(
   selection: string | string[] | null
@@ -32,49 +20,22 @@ function normalizeSelection(
 }
 
 export function BrowseLocalFiles() {
+	  const {
+	    items,
+	    addFiles,
+	    addFolders,
+	    setItemProgress,
+	    setItemStatus,
+	    resetItemsUploadState,
+	  } = useLocalUploadQueue()
   const {
-    items,
-    addFiles,
-    addFolders,
-    clear,
-    setItemProgress,
-    setItemStatus,
-    resetUploadState,
-  } = useLocalUploadQueue()
-  const {
-    destinationUrl,
     destinationError,
     destinationFolderId,
-    setDestinationUrl,
   } = useUploadDestinationStore()
-  const { data: preferences } = usePreferences()
   const [isBrowsing, setIsBrowsing] = useState(false)
   const [isDropActive, setIsDropActive] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [errorBanner, setErrorBanner] = useState<string | null>(null)
-  const [selectedPresetId, setSelectedPresetId] = useState<string>('custom')
-
-  const destinationPresets = useMemo(
-    () => preferences?.destinationPresets ?? [],
-    [preferences?.destinationPresets]
-  )
-
-  useEffect(() => {
-    if (!destinationUrl.trim()) {
-      setSelectedPresetId('custom')
-      return
-    }
-    const match = destinationPresets.find(
-      p => p.url.trim() === destinationUrl.trim()
-    )
-    setSelectedPresetId(match ? match.id : 'custom')
-  }, [destinationPresets, destinationUrl])
-
-  const startUploadDisabled =
-    items.length === 0 ||
-    !destinationFolderId ||
-    destinationError ||
-    isUploading
 
   const handleBrowse = async () => {
     if (isBrowsing) return
@@ -97,34 +58,6 @@ export function BrowseLocalFiles() {
       if (folders.length > 0) addFolders(folders)
     } finally {
       setIsBrowsing(false)
-    }
-  }
-
-  const handleStartUpload = async () => {
-    if (!destinationFolderId) return
-    if (destinationError) return
-    if (items.length === 0) return
-    if (isUploading) return
-
-    setIsUploading(true)
-    resetUploadState()
-    setErrorBanner(null)
-
-    try {
-      await invoke('start_upload', {
-        args: {
-          queueItems: items.map(item => ({
-            id: item.id,
-            path: item.path,
-            kind: item.kind,
-          })),
-          destinationFolderId,
-        },
-      })
-    } catch (error) {
-      setIsUploading(false)
-      const message = error instanceof Error ? error.message : String(error)
-      toast.error('Failed to start upload', { description: message })
     }
   }
 
@@ -189,7 +122,7 @@ export function BrowseLocalFiles() {
       if (unlistenCompleted) unlistenCompleted()
       if (unlistenErrorBanner) unlistenErrorBanner()
     }
-  }, [resetUploadState, setItemProgress, setItemStatus])
+  }, [setItemProgress, setItemStatus])
 
   useEffect(() => {
     let unlisten: (() => void) | null = null
@@ -273,9 +206,84 @@ export function BrowseLocalFiles() {
     }
   }, [])
 
+  const handleStartSelected = async (selectedIds: string[]) => {
+    if (!destinationFolderId) return
+    if (destinationError) return
+    if (selectedIds.length === 0) return
+
+    const selected = items.filter(i => selectedIds.includes(i.id))
+    const startable = selected.filter(
+      i => i.status === 'queued' || i.status === 'paused' || !i.status
+    )
+
+    if (isUploading) {
+      const toResume = startable.filter(i => i.status === 'paused').map(i => i.id)
+      if (toResume.length === 0) {
+        toast.message('Nothing to start', {
+          description: 'Select queued or paused items.',
+        })
+        return
+      }
+      invoke('pause_items', { itemIds: toResume, paused: false }).catch(() => {})
+      for (const id of toResume) {
+        setItemStatus(id, 'uploading', null, null)
+      }
+      return
+    }
+
+    if (startable.length === 0) {
+      toast.message('Nothing to start', {
+        description: 'Select queued or paused items.',
+      })
+      return
+    }
+
+    setIsUploading(true)
+    setErrorBanner(null)
+
+    resetItemsUploadState(startable.map(i => i.id))
+    for (const it of startable) {
+      setItemStatus(it.id, 'preparing', null, null)
+    }
+
+    try {
+      await invoke('start_upload', {
+        args: {
+          queueItems: startable.map(item => ({
+            id: item.id,
+            path: item.path,
+            kind: item.kind,
+          })),
+          destinationFolderId,
+        },
+      })
+    } catch (error) {
+      setIsUploading(false)
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error('Failed to start upload', { description: message })
+    }
+  }
+
+  const handlePauseSelected = async (selectedIds: string[]) => {
+    if (selectedIds.length === 0) return
+    if (!isUploading) return
+
+    const selected = items.filter(i => selectedIds.includes(i.id))
+    const toPause = selected
+      .filter(i => i.status === 'uploading' || i.status === 'preparing')
+      .map(i => i.id)
+
+    if (toPause.length === 0) return
+
+    invoke('pause_items', { itemIds: toPause, paused: true }).catch(() => {})
+    for (const id of toPause) {
+      setItemStatus(id, 'paused', null, null)
+    }
+  }
+
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
-      <div className="shrink-0 space-y-4 p-6">
+      {/* <div className="shrink-0 space-y-4 p-6">
         {errorBanner ? (
           <Alert variant="destructive">
             <AlertTitle className="flex items-center justify-between gap-3">
@@ -295,115 +303,16 @@ export function BrowseLocalFiles() {
             </AlertDescription>
           </Alert>
         ) : null}
-
-        <section className="space-y-2">
-          <Label htmlFor="destination-url">Destination folder URL</Label>
-          {destinationPresets.length > 0 ? (
-            <div className="flex items-center gap-2">
-              <Select
-                value={selectedPresetId}
-                onValueChange={value => {
-                  setSelectedPresetId(value)
-                  if (value === 'custom') return
-                  const preset = destinationPresets.find(p => p.id === value)
-                  if (preset) setDestinationUrl(preset.url)
-                }}
-              >
-                <SelectTrigger className="w-[260px]" size="sm">
-                  <SelectValue placeholder="Custom" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="custom">Custom</SelectItem>
-                  {destinationPresets.map(p => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {/* <div className="text-xs text-muted-foreground">
-                Select a saved destination or enter a custom URL.
-              </div> */}
-
-              <div className='flex flex-col gap-0.5 w-full'>
-                <Input
-                  id="destination-url"
-                  value={destinationUrl}
-                  onChange={e => setDestinationUrl(e.target.value)}
-                  placeholder="https://drive.google.com/drive/folders/<FOLDER_ID>"
-                  aria-invalid={Boolean(destinationError)}
-                  className={
-                    destinationError
-                      ? 'border-destructive focus-visible:border-destructive focus-visible:ring-destructive/20'
-                      : destinationFolderId
-                        ? 'border-emerald-600 focus-visible:border-emerald-600 focus-visible:ring-emerald-600/25'
-                        : undefined
-                  }
-                />
-                {/* {destinationError ? (
-                  <p className="text-sm text-destructive">
-                    Please enter a Google Drive <em>folder</em> URL.
-                  </p>
-                ) : destinationFolderId ? (
-                  <p className="text-sm text-emerald-700 dark:text-emerald-400">
-                    Folder ID:{' '}
-                    <span className="font-mono">{destinationFolderId}</span>
-                  </p>
-                ) : null} */}
-              </div>
-            </div>
-          ) : null}
-        </section>
-
-        <section
-          aria-label="Drop zone"
-          className={cn(
-            'w-full rounded-md border border-dashed p-8 text-center transition-colors',
-            isDropActive
-              ? 'border-primary bg-primary/5'
-              : 'border-border bg-muted/20'
-          )}
-        >
-          <div className="text-base font-medium">
-            Drop files &amp; folders here
-          </div>
-          <div className="my-2 text-sm text-muted-foreground">
-            or 
-          </div>
-          <Button type="button" onClick={handleBrowse} disabled={isBrowsing}>
-              {isBrowsing ? 'Browsing…' : 'Browse…'}
-          </Button>
-        </section>
-
-        <section className="flex flex-col items-start gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              disabled={startUploadDisabled}
-              onClick={handleStartUpload}
-            >
-              {isUploading ? 'Uploading…' : 'Upload files'}
-            </Button>
-          </div>
-        </section>
-      </div>
-
-      <Separator />
+      </div> */}
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 p-6">
-        {items.length > 0 ? (
-          <TransferTable />
-        ) : (
-          <section className="rounded-md border border-dashed p-8 text-center">
-            <div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-md bg-muted">
-              <Trash2Icon className="size-5 text-muted-foreground" />
-            </div>
-            <div className="text-sm font-medium">Upload queue is empty</div>
-            <div className="mt-1 text-sm text-muted-foreground">
-              Click Browse… to add files and folders.
-            </div>
-          </section>
-        )}
+        <TransferTable
+          isDropActive={isDropActive}
+          onBrowse={handleBrowse}
+          onStartSelected={handleStartSelected}
+          onPauseSelected={handlePauseSelected}
+          isUploading={isUploading}
+        />
       </div>
     </div>
   )
