@@ -3,8 +3,8 @@ use crate::upload::events::{CompletedEvent, ItemStatusEvent, ProgressEvent, Summ
 use crate::upload::mirror::{build_tasks_for_item, read_file_chunk, FolderAggregate, UploadTask};
 use crate::upload::sa_loader::load_service_accounts;
 use reqwest::Client;
-use std::collections::HashSet;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -28,7 +28,9 @@ pub fn build_drive_pool(service_account_folder: &str) -> Result<DrivePool, Strin
     let folder = PathBuf::from(service_account_folder);
     let accounts = load_service_accounts(&folder)?;
     if accounts.is_empty() {
-        return Err("No valid service account JSON files found in the selected folder.".to_string());
+        return Err(
+            "No valid service account JSON files found in the selected folder.".to_string(),
+        );
     }
 
     let http = Client::builder()
@@ -124,21 +126,20 @@ pub async fn run_upload_job_with_pool(
 
                 let client = pool.next_client();
                 let sa_email = client.sa_email().to_string();
-                let result =
-                    upload_one_file(
-                        &client,
-                        &control,
-                        &app,
-                        &task,
-                        per_item_totals.clone(),
-                        per_item_sent.clone(),
-                    )
-                        .await;
+                let result = upload_one_file(
+                    &client,
+                    &control,
+                    &app,
+                    &task,
+                    per_item_totals.clone(),
+                    per_item_sent.clone(),
+                )
+                .await;
                 if let Err(e) = &result {
                     let mut failed = per_item_failed.lock().await;
-                    failed.entry(task.top_item_id.clone()).or_insert_with(|| {
-                        format!("SA {sa_email}: {e}")
-                    });
+                    failed
+                        .entry(task.top_item_id.clone())
+                        .or_insert_with(|| format!("SA {sa_email}: {e}"));
                     let _ = app.emit(
                         "upload:item_status",
                         ItemStatusEvent {
@@ -171,10 +172,15 @@ pub async fn run_upload_job_with_pool(
             },
         );
 
-        let (tasks, aggregate) =
-            build_tasks_for_item(&pool, &destination_folder_id, &item.id, &item.path, &item.kind)
-                .await
-                .map_err(|e| format!("Failed to prepare {}: {e}", item.path))?;
+        let (tasks, aggregate) = build_tasks_for_item(
+            &pool,
+            &destination_folder_id,
+            &item.id,
+            &item.path,
+            &item.kind,
+        )
+        .await
+        .map_err(|e| format!("Failed to prepare {}: {e}", item.path))?;
 
         if let Some(agg) = aggregate {
             folder_aggregates.insert(item.id.clone(), agg);
@@ -199,8 +205,8 @@ pub async fn run_upload_job_with_pool(
         }
 
         // Mark as uploading once tasks are enqueued (folder mirroring has finished).
-        let should_pause = *control.pause_rx.borrow()
-            || control.paused_items_rx.borrow().contains(&item.id);
+        let should_pause =
+            *control.pause_rx.borrow() || control.paused_items_rx.borrow().contains(&item.id);
         let _ = app.emit(
             "upload:item_status",
             ItemStatusEvent {
@@ -326,7 +332,14 @@ async fn upload_one_file(
         let is_last = end_inclusive + 1 == task.total_bytes;
 
         let _ = client
-            .upload_resumable_chunk(&upload_url, chunk, start, end_inclusive, task.total_bytes, is_last)
+            .upload_resumable_chunk(
+                &upload_url,
+                chunk,
+                start,
+                end_inclusive,
+                task.total_bytes,
+                is_last,
+            )
             .await?;
 
         let delta = (end_inclusive + 1).saturating_sub(offset);
@@ -335,7 +348,9 @@ async fn upload_one_file(
         let (sent, total) = {
             let mut sent_map = per_item_sent.lock().await;
             let totals_map = per_item_totals.lock().await;
-            let total = *totals_map.get(&task.top_item_id).unwrap_or(&task.total_bytes);
+            let total = *totals_map
+                .get(&task.top_item_id)
+                .unwrap_or(&task.total_bytes);
             let entry = sent_map.entry(task.top_item_id.clone()).or_insert(0);
             *entry = entry.saturating_add(delta);
             (*entry, total)

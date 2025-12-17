@@ -27,7 +27,11 @@ interface LocalUploadQueueState {
     message?: string | null,
     saEmail?: string | null
   ) => void
-  setItemProgress: (itemId: string, bytesSent: number, totalBytes: number) => void
+  setItemProgress: (
+    itemId: string,
+    bytesSent: number,
+    totalBytes: number
+  ) => void
   resetUploadState: () => void
   resetItemsUploadState: (itemIds: string[]) => void
   remove: (path: string) => void
@@ -46,7 +50,13 @@ function addUniqueItems(
   for (const { path, kind } of incoming) {
     if (existingPaths.has(path)) continue
     existingPaths.add(path)
-    newItems.push({ id: path, path, kind, addedAt: Date.now(), status: 'queued' })
+    newItems.push({
+      id: path,
+      path,
+      kind,
+      addedAt: Date.now(),
+      status: 'queued',
+    })
   }
 
   return existing.concat(newItems)
@@ -94,9 +104,7 @@ export const useLocalUploadQueue = create<LocalUploadQueueState>()(
         set(
           state => ({
             items: state.items.map(item =>
-              item.id === itemId
-                ? { ...item, status, message, saEmail }
-                : item
+              item.id === itemId ? { ...item, status, message, saEmail } : item
             ),
           }),
           undefined,
@@ -107,9 +115,7 @@ export const useLocalUploadQueue = create<LocalUploadQueueState>()(
         set(
           state => ({
             items: state.items.map(item =>
-              item.id === itemId
-                ? { ...item, bytesSent, totalBytes }
-                : item
+              item.id === itemId ? { ...item, bytesSent, totalBytes } : item
             ),
           }),
           undefined,

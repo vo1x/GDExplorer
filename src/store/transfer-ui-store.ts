@@ -24,12 +24,14 @@ interface TransferUiState {
   resumeAll: (ids: string[]) => void
   clearRemoved: (remainingIds: string[]) => void
 
-  tick: (items: {
-    id: string
-    status?: UploadRuntimeStatus | null
-    bytesSent?: number | null
-    totalBytes?: number | null
-  }[]) => void
+  tick: (
+    items: {
+      id: string
+      status?: UploadRuntimeStatus | null
+      bytesSent?: number | null
+      totalBytes?: number | null
+    }[]
+  ) => void
 }
 
 export const useTransferUiStore = create<TransferUiState>((set, get) => ({
@@ -41,7 +43,9 @@ export const useTransferUiStore = create<TransferUiState>((set, get) => ({
 
   setPaused: (id, paused) =>
     set(state => ({
-      pausedById: paused ? { ...state.pausedById, [id]: true } : omitKey(state.pausedById, id),
+      pausedById: paused
+        ? { ...state.pausedById, [id]: true }
+        : omitKey(state.pausedById, id),
     })),
 
   pauseAll: ids =>
@@ -79,7 +83,11 @@ export const useTransferUiStore = create<TransferUiState>((set, get) => ({
         if (remaining.has(id)) nextLast[id] = v
       }
 
-      return { pausedById: nextPaused, metricsById: nextMetrics, _lastSampleById: nextLast }
+      return {
+        pausedById: nextPaused,
+        metricsById: nextMetrics,
+        _lastSampleById: nextLast,
+      }
     }),
 
   tick: items =>
@@ -104,7 +112,8 @@ export const useTransferUiStore = create<TransferUiState>((set, get) => ({
         // Update sample only when actively uploading (keeps ETA/speed stable when queued/preparing).
         const shouldSample = status === 'uploading' && !paused
         if (shouldSample) {
-          if (lastSampleById === state._lastSampleById) lastSampleById = { ...state._lastSampleById }
+          if (lastSampleById === state._lastSampleById)
+            lastSampleById = { ...state._lastSampleById }
           lastSampleById[id] = { bytesSent: sent, atMs: now }
         }
 
@@ -127,13 +136,17 @@ export const useTransferUiStore = create<TransferUiState>((set, get) => ({
                 : null
 
         const prevMetrics = state.metricsById[id]
-        const nextMetrics: TransferMetrics = { speedBytesPerSec: speed, etaSeconds }
+        const nextMetrics: TransferMetrics = {
+          speedBytesPerSec: speed,
+          etaSeconds,
+        }
         if (
           !prevMetrics ||
           prevMetrics.speedBytesPerSec !== nextMetrics.speedBytesPerSec ||
           prevMetrics.etaSeconds !== nextMetrics.etaSeconds
         ) {
-          if (metricsById === state.metricsById) metricsById = { ...state.metricsById }
+          if (metricsById === state.metricsById)
+            metricsById = { ...state.metricsById }
           metricsById[id] = nextMetrics
         }
       }

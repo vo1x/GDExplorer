@@ -27,4 +27,3 @@ export function formatEta(seconds: number | null | undefined): string {
   if (m > 0) return `${m}m ${sec}s`
   return `${sec}s`
 }
-

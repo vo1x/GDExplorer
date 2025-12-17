@@ -17,9 +17,7 @@ pub async fn ensure_destination_folder_access(
         .clone()
         .unwrap_or_else(|| "(missing mimeType)".to_string());
     if mime != "application/vnd.google-apps.folder" {
-        return Err(format!(
-            "Destination is not a folder (mimeType = {mime})"
-        ));
+        return Err(format!("Destination is not a folder (mimeType = {mime})"));
     }
 
     let drive_id_present = meta.drive_id.is_some();
@@ -40,7 +38,12 @@ pub async fn ensure_destination_folder_access(
     // Creating a folder alone may not catch quota / write limitations for service accounts.
     // Use a tiny (1 byte) resumable upload as a "write + quota" check, then delete the created file.
     let upload_url = client
-        .start_resumable_upload(destination_folder_id, &format!("{test_name}.txt"), "text/plain", 1)
+        .start_resumable_upload(
+            destination_folder_id,
+            &format!("{test_name}.txt"),
+            "text/plain",
+            1,
+        )
         .await
         .map_err(map_preflight_error)?;
 

@@ -66,8 +66,8 @@ pub async fn build_tasks_for_item(
         .unwrap_or(item_path)
         .to_string();
 
-    let drive_root = create_unique_folder(&pool.next_client(), destination_folder_id, &base_name)
-        .await?;
+    let drive_root =
+        create_unique_folder(&pool.next_client(), destination_folder_id, &base_name).await?;
 
     let mut folder_map: HashMap<PathBuf, String> = HashMap::new();
     folder_map.insert(local_root.clone(), drive_root.id.clone());
@@ -88,11 +88,7 @@ pub async fn build_tasks_for_item(
                 .cloned()
                 .ok_or_else(|| format!("Missing parent mapping for {parent:?}"))?;
 
-            let name = entry
-                .file_name()
-                .to_str()
-                .unwrap_or("folder")
-                .to_string();
+            let name = entry.file_name().to_str().unwrap_or("folder").to_string();
             let created = create_unique_folder(&pool.next_client(), &parent_drive, &name).await?;
             folder_map.insert(path, created.id);
             continue;

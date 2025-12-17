@@ -33,7 +33,11 @@ export const useUploadDestinationStore = create<UploadDestinationState>()(
 
       clearDestination: () =>
         set(
-          { destinationUrl: '', destinationFolderId: null, destinationError: false },
+          {
+            destinationUrl: '',
+            destinationFolderId: null,
+            destinationError: false,
+          },
           undefined,
           'clearDestination'
         ),

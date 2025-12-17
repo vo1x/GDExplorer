@@ -10,18 +10,18 @@ Requirements
 
 Run in development
 
-1) Install dependencies:
+1. Install dependencies:
    `npm install`
 
-2) Start the dev app:
+2. Start the dev app:
    `npm run tauri:dev`
 
 Build installers
 
-1) Build the frontend:
+1. Build the frontend:
    `npm run build`
 
-2) Build the Tauri app (installers/artifacts):
+2. Build the Tauri app (installers/artifacts):
    `npm run tauri:build`
 
 Auto-updates (GitHub Releases)

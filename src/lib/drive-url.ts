@@ -26,4 +26,3 @@ export function extractDriveFolderId(raw: string): string | null {
 
   return null
 }
-

@@ -20,7 +20,7 @@ export function ProgressBar({
       ? 'bg-emerald-500/20'
       : state === 'uploading'
         ? 'bg-sky-500/15'
-      : state === 'paused'
+        : state === 'paused'
           ? 'bg-yellow-500/15'
           : state === 'failed'
             ? 'bg-red-500/15'
@@ -31,7 +31,7 @@ export function ProgressBar({
       ? 'bg-emerald-500'
       : state === 'uploading'
         ? 'bg-sky-500'
-      : state === 'paused'
+        : state === 'paused'
           ? 'bg-yellow-500'
           : state === 'failed'
             ? 'bg-red-500'
@@ -46,10 +46,7 @@ export function ProgressBar({
 
   return (
     <div
-      className={cn(
-        'relative h-4 w-full overflow-hidden rounded-sm',
-        track
-      )}
+      className={cn('relative h-4 w-full overflow-hidden rounded-sm', track)}
     >
       <div
         className={cn(

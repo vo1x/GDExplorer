@@ -22,7 +22,11 @@ import { useTransferUiStore } from '@/store/transfer-ui-store'
 import { ProgressBar, type TransferState } from './ProgressBar'
 import { formatBytes, formatEta, formatSpeed } from './format'
 import { FileIcon, FolderIcon, AlertTriangleIcon } from 'lucide-react'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 function getPathName(path: string): string {
   const normalized = path.replace(/[/\\]+$/g, '')
@@ -398,7 +402,10 @@ export function TransferTable({
         </div>
       </div>
 
-      <AlertDialog open={clearDialogOpen} onOpenChange={open => !clearPending && setClearDialogOpen(open)}>
+      <AlertDialog
+        open={clearDialogOpen}
+        onOpenChange={open => !clearPending && setClearDialogOpen(open)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Clear all transfers?</AlertDialogTitle>
@@ -407,7 +414,9 @@ export function TransferTable({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={clearPending}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={clearPending}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               disabled={clearPending}
               onClick={async () => {
@@ -444,7 +453,10 @@ export function TransferTable({
               <div key={header.id} role="columnheader">
                 {header.isPlaceholder
                   ? null
-                  : flexRender(header.column.columnDef.header, header.getContext())}
+                  : flexRender(
+                      header.column.columnDef.header,
+                      header.getContext()
+                    )}
               </div>
             ))
           )}
@@ -475,8 +487,12 @@ export function TransferTable({
           </div>
         ) : (
           <div className="flex h-[260px] flex-col items-center justify-center gap-3 p-6 text-center">
-            <div className="text-base font-medium">Drop files &amp; folders here</div>
-            <div className="text-sm text-muted-foreground">or click Browse…</div>
+            <div className="text-base font-medium">
+              Drop files &amp; folders here
+            </div>
+            <div className="text-sm text-muted-foreground">
+              or click Browse…
+            </div>
             <Button type="button" onClick={onBrowse}>
               Browse…
             </Button>

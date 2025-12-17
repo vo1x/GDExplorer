@@ -17,18 +17,15 @@ function normalizeSelection(
 }
 
 export function BrowseLocalFiles() {
-	  const {
-	    items,
-	    addFiles,
-	    addFolders,
-	    setItemProgress,
-	    setItemStatus,
-	    resetItemsUploadState,
-	  } = useLocalUploadQueue()
   const {
-    destinationError,
-    destinationFolderId,
-  } = useUploadDestinationStore()
+    items,
+    addFiles,
+    addFolders,
+    setItemProgress,
+    setItemStatus,
+    resetItemsUploadState,
+  } = useLocalUploadQueue()
+  const { destinationError, destinationFolderId } = useUploadDestinationStore()
   const [isBrowsing, setIsBrowsing] = useState(false)
   const [isDropActive, setIsDropActive] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
@@ -213,7 +210,9 @@ export function BrowseLocalFiles() {
     )
 
     if (isUploading) {
-      const toResume = startable.filter(i => i.status === 'paused').map(i => i.id)
+      const toResume = startable
+        .filter(i => i.status === 'paused')
+        .map(i => i.id)
       if (toResume.length === 0) {
         toast.message('Nothing to start', {
           description: 'Select queued or paused items.',

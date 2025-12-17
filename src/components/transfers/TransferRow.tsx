@@ -1,11 +1,21 @@
 import { memo, useMemo } from 'react'
 import { FileIcon, FolderIcon, AlertTriangleIcon } from 'lucide-react'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { ProgressBar, type TransferState } from './ProgressBar'
 import { formatBytes, formatEta, formatSpeed } from './format'
 import { useTransferUiStore } from '@/store/transfer-ui-store'
 
-type UploadRuntimeStatus = 'queued' | 'preparing' | 'uploading' | 'paused' | 'done' | 'failed'
+type UploadRuntimeStatus =
+  | 'queued'
+  | 'preparing'
+  | 'uploading'
+  | 'paused'
+  | 'done'
+  | 'failed'
 
 export interface TransferRowItem {
   id: string
@@ -37,11 +47,11 @@ export const TransferRow = memo(function TransferRow({
           ? 'failed'
           : runtime === 'paused'
             ? 'paused'
-          : paused
-            ? 'paused'
-            : runtime === 'uploading'
-              ? 'uploading'
-              : 'queued'
+            : paused
+              ? 'paused'
+              : runtime === 'uploading'
+                ? 'uploading'
+                : 'queued'
 
     const rawPct = total > 0 ? (Math.min(sent, total) / total) * 100 : 0
     const pct =
@@ -79,7 +89,14 @@ export const TransferRow = memo(function TransferRow({
     const size = total > 0 ? formatBytes(total) : '—'
 
     return { state, pct, statusLabel, speed, eta, size }
-  }, [item.status, metrics?.etaSeconds, metrics?.speedBytesPerSec, paused, sent, total])
+  }, [
+    item.status,
+    metrics?.etaSeconds,
+    metrics?.speedBytesPerSec,
+    paused,
+    sent,
+    total,
+  ])
 
   return (
     <div
@@ -106,7 +123,7 @@ export const TransferRow = memo(function TransferRow({
           'flex items-center gap-1 text-xs',
           derived.state === 'failed'
             ? 'text-red-300'
-          : derived.state === 'completed'
+            : derived.state === 'completed'
               ? 'text-emerald-300'
               : derived.state === 'uploading'
                 ? 'text-sky-200'

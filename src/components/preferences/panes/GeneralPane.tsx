@@ -73,8 +73,8 @@ const GeneralPaneForm: React.FC<{
   const [maxConcurrentInput, setMaxConcurrentInput] = useState<string>(() =>
     String(preferences.maxConcurrentUploads ?? 3)
   )
-  const [lastSavedMaxConcurrent, setLastSavedMaxConcurrent] = useState(() =>
-    preferences.maxConcurrentUploads ?? 3
+  const [lastSavedMaxConcurrent, setLastSavedMaxConcurrent] = useState(
+    () => preferences.maxConcurrentUploads ?? 3
   )
 
   const [destinationPresetsDraft, setDestinationPresetsDraft] = useState<
@@ -106,7 +106,9 @@ const GeneralPaneForm: React.FC<{
     if (!folderPath) return
 
     try {
-      await savePreferences.mutateAsync({ serviceAccountFolderPath: folderPath })
+      await savePreferences.mutateAsync({
+        serviceAccountFolderPath: folderPath,
+      })
       setServiceAccountFolder(folderPath)
       setLastSavedServiceAccountFolder(folderPath)
     } catch {
@@ -259,9 +261,7 @@ const GeneralPaneForm: React.FC<{
 
             <div className="space-y-2">
               {destinationPresetsDraft.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No presets yet.
-                </p>
+                <p className="text-sm text-muted-foreground">No presets yet.</p>
               ) : (
                 destinationPresetsDraft.map(preset => (
                   <div
@@ -326,7 +326,9 @@ const GeneralPaneForm: React.FC<{
                 type="button"
                 variant="secondary"
                 onClick={() =>
-                  setDestinationPresetsDraft(preferences?.destinationPresets ?? [])
+                  setDestinationPresetsDraft(
+                    preferences?.destinationPresets ?? []
+                  )
                 }
                 disabled={savePreferences.isPending}
               >

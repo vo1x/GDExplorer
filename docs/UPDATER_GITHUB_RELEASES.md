@@ -16,6 +16,7 @@ Run:
 `npx tauri signer generate`
 
 This prints:
+
 - a **private key** (keep secret)
 - a **public key** (put into `src-tauri/tauri.conf.json` `plugins.updater.pubkey`)
 
@@ -34,6 +35,7 @@ Tag a version and push it:
 - `git push origin v0.1.1`
 
 The workflow `.github/workflows/release.yml` builds and uploads:
+
 - installers (Windows + macOS)
 - updater artifacts (`latest.json` + signatures)
 
@@ -41,4 +43,3 @@ The workflow `.github/workflows/release.yml` builds and uploads:
 
 - The app already listens for the menu event `Check for Updates…` and calls the updater plugin.
 - There is also an automatic update check shortly after startup (see `src/App.tsx`).
-

@@ -1,7 +1,9 @@
 use crate::upload::sa_loader::ServiceAccount;
 use bytes::Bytes;
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_LENGTH, CONTENT_RANGE, LOCATION};
+use reqwest::header::{
+    HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_LENGTH, CONTENT_RANGE, LOCATION,
+};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -78,7 +80,8 @@ impl DriveClient {
         header.typ = Some("JWT".to_string());
         let key = EncodingKey::from_rsa_pem(self.account.private_key.as_bytes())
             .map_err(|e| format!("Invalid RSA private key: {e}"))?;
-        let assertion = encode(&header, &claims, &key).map_err(|e| format!("JWT encode failed: {e}"))?;
+        let assertion =
+            encode(&header, &claims, &key).map_err(|e| format!("JWT encode failed: {e}"))?;
 
         let body = serde_urlencoded::to_string([
             ("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"),
@@ -272,7 +275,9 @@ impl DriveClient {
                 status,
                 text
             );
-            return Err(format!("Drive files.create folder failed ({status}): {text}"));
+            return Err(format!(
+                "Drive files.create folder failed ({status}): {text}"
+            ));
         }
 
         resp.json()
@@ -295,16 +300,20 @@ impl DriveClient {
             name,
             total_bytes
         );
-        headers.insert("Content-Type", HeaderValue::from_static("application/json; charset=UTF-8"));
-        headers.insert("X-Upload-Content-Type", HeaderValue::from_str(mime_type).unwrap());
+        headers.insert(
+            "Content-Type",
+            HeaderValue::from_static("application/json; charset=UTF-8"),
+        );
+        headers.insert(
+            "X-Upload-Content-Type",
+            HeaderValue::from_str(mime_type).unwrap(),
+        );
         headers.insert(
             "X-Upload-Content-Length",
             HeaderValue::from_str(&total_bytes.to_string()).unwrap(),
         );
 
-        let url = format!(
-            "{DRIVE_UPLOAD_BASE}/files?uploadType=resumable&supportsAllDrives=true"
-        );
+        let url = format!("{DRIVE_UPLOAD_BASE}/files?uploadType=resumable&supportsAllDrives=true");
         let body = serde_json::json!({
             "name": name,
             "parents": [parent_id]
@@ -380,7 +389,10 @@ impl DriveClient {
             total,
             is_last
         );
-        headers.insert(CONTENT_LENGTH, HeaderValue::from_str(&chunk.len().to_string()).unwrap());
+        headers.insert(
+            CONTENT_LENGTH,
+            HeaderValue::from_str(&chunk.len().to_string()).unwrap(),
+        );
         headers.insert(
             CONTENT_RANGE,
             HeaderValue::from_str(&format!("bytes {start}-{end_inclusive}/{total}")).unwrap(),

@@ -30,7 +30,8 @@ impl UploadControl {
     }
 
     fn cancel(&self) {
-        self.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.cancel
+            .store(true, std::sync::atomic::Ordering::Relaxed);
         // Ensure any paused workers can wake up and observe cancellation.
         let _ = self.pause_tx.send(false);
     }
@@ -123,7 +124,12 @@ async fn start_upload(
     // Build SA pool and run a preflight check in-command so we can return actionable errors to the UI.
     let pool = upload::scheduler::build_drive_pool(&service_account_folder)?;
     let preflight_client = pool.next_client();
-    if let Err(e) = upload::drive_ops::ensure_destination_folder_access(&preflight_client, &destination_folder_id).await {
+    if let Err(e) = upload::drive_ops::ensure_destination_folder_access(
+        &preflight_client,
+        &destination_folder_id,
+    )
+    .await
+    {
         let msg = e;
         if msg.starts_with("Service Accounts can only upload to Shared Drives.") {
             return Err(msg);
@@ -252,10 +258,14 @@ fn validate_destination_presets(presets: &[DestinationPreset]) -> Result<(), Str
         validate_string_input(&p.name, 80, "Destination preset name")?;
         validate_string_input(&p.url, 1024, "Destination preset URL")?;
         if p.name.trim().is_empty() {
-            return Err(format!("Destination preset name cannot be empty (index {i})"));
+            return Err(format!(
+                "Destination preset name cannot be empty (index {i})"
+            ));
         }
         if p.url.trim().is_empty() {
-            return Err(format!("Destination preset URL cannot be empty (index {i})"));
+            return Err(format!(
+                "Destination preset URL cannot be empty (index {i})"
+            ));
         }
     }
     Ok(())
