@@ -42,4 +42,3 @@ lto = true               # Link-time optimizations
 opt-level = "s"          # Optimize for size over speed
 panic = "abort"          # Don't include panic unwinding code
 strip = true             # Remove debug symbols
-

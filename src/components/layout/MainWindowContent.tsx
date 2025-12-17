@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils'
+import { BrowseLocalFiles } from '@/components/upload/BrowseLocalFiles'
 
 interface MainWindowContentProps {
   children?: React.ReactNode
@@ -11,11 +12,7 @@ export function MainWindowContent({
 }: MainWindowContentProps) {
   return (
     <div className={cn('flex h-full flex-col bg-background', className)}>
-      {children || (
-        <div className="flex flex-1 items-center justify-center">
-          <h1 className="text-4xl font-bold text-foreground">Hello World</h1>
-        </div>
-      )}
+      {children || <BrowseLocalFiles />}
     </div>
   )
 }

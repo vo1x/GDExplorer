@@ -1,8 +1,10 @@
-import React, { useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
+import { open } from '@tauri-apps/plugin-dialog'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
-import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { usePreferences, useSavePreferences } from '@/services/preferences'
 
 const SettingsField: React.FC<{
   label: string
@@ -32,40 +34,106 @@ const SettingsSection: React.FC<{
 )
 
 export const GeneralPane: React.FC = () => {
-  // Example local state - these are NOT persisted to disk
-  // To add persistent preferences:
-  // 1. Add the field to AppPreferences in both Rust and TypeScript
-  // 2. Use usePreferencesManager() and updatePreferences()
-  const [exampleText, setExampleText] = useState('Example value')
-  const [exampleToggle, setExampleToggle] = useState(true)
+  const { data: preferences } = usePreferences()
+  const savePreferences = useSavePreferences()
+
+  const [serviceAccountFolder, setServiceAccountFolder] = useState<string>('')
+  const [lastSavedServiceAccountFolder, setLastSavedServiceAccountFolder] =
+    useState<string>('')
+  const [maxConcurrentInput, setMaxConcurrentInput] = useState<string>('3')
+  const [lastSavedMaxConcurrent, setLastSavedMaxConcurrent] = useState(3)
+
+  useEffect(() => {
+    if (!preferences) return
+    const folder = preferences.serviceAccountFolderPath ?? ''
+    setServiceAccountFolder(folder)
+    setLastSavedServiceAccountFolder(folder)
+    setMaxConcurrentInput(String(preferences.maxConcurrentUploads ?? 3))
+    setLastSavedMaxConcurrent(preferences.maxConcurrentUploads ?? 3)
+  }, [preferences])
+
+  const maxConcurrentError = useMemo(() => {
+    const trimmed = maxConcurrentInput.trim()
+    if (!trimmed) return 'Please enter a number between 1 and 10.'
+    if (!/^\d+$/.test(trimmed)) return 'Must be an integer between 1 and 10.'
+    const parsed = Number.parseInt(trimmed, 10)
+    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 10) {
+      return 'Must be an integer between 1 and 10.'
+    }
+    return null
+  }, [maxConcurrentInput])
+
+  const handleBrowseServiceAccountsFolder = async () => {
+    const selection = await open({
+      directory: true,
+      multiple: false,
+      title: 'Select service account credentials folder',
+    })
+    if (!selection) return
+
+    const folderPath = Array.isArray(selection) ? selection[0] : selection
+    if (!folderPath) return
+
+    try {
+      await savePreferences.mutateAsync({ serviceAccountFolderPath: folderPath })
+      setServiceAccountFolder(folderPath)
+      setLastSavedServiceAccountFolder(folderPath)
+    } catch {
+      setServiceAccountFolder(lastSavedServiceAccountFolder)
+    }
+  }
+
+  const handleSaveMaxConcurrent = () => {
+    if (maxConcurrentError) return
+    const value = Number.parseInt(maxConcurrentInput.trim(), 10)
+    savePreferences
+      .mutateAsync({ maxConcurrentUploads: value })
+      .then(() => {
+        setLastSavedMaxConcurrent(value)
+      })
+      .catch(() => {
+        setMaxConcurrentInput(String(lastSavedMaxConcurrent))
+      })
+  }
 
   return (
     <div className="space-y-6">
-      <SettingsSection title="Example Settings">
+      <SettingsSection title="Uploads">
         <SettingsField
-          label="Example Text Setting"
-          description="This is an example text input setting (not persisted)"
+          label="Service Account credentials folder (.json)"
+          description="Select a folder containing one or more service account JSON files."
         >
-          <Input
-            value={exampleText}
-            onChange={e => setExampleText(e.target.value)}
-            placeholder="Enter example text"
-          />
+          <div className="flex items-center gap-2">
+            <Input
+              value={serviceAccountFolder}
+              placeholder="No folder selected"
+              readOnly
+            />
+            <Button
+              type="button"
+              onClick={handleBrowseServiceAccountsFolder}
+              disabled={savePreferences.isPending}
+            >
+              Browse…
+            </Button>
+          </div>
         </SettingsField>
 
         <SettingsField
-          label="Example Toggle Setting"
-          description="This is an example switch/toggle setting (not persisted)"
+          label="Maximum concurrent uploads"
+          description="Controls how many uploads can run at the same time."
         >
-          <div className="flex items-center space-x-2">
-            <Switch
-              id="example-toggle"
-              checked={exampleToggle}
-              onCheckedChange={setExampleToggle}
+          <div className="space-y-2">
+            <Input
+              inputMode="numeric"
+              value={maxConcurrentInput}
+              onChange={e => setMaxConcurrentInput(e.target.value)}
+              onBlur={handleSaveMaxConcurrent}
+              aria-invalid={Boolean(maxConcurrentError)}
             />
-            <Label htmlFor="example-toggle" className="text-sm">
-              {exampleToggle ? 'Enabled' : 'Disabled'}
-            </Label>
+            {maxConcurrentError ? (
+              <p className="text-sm text-destructive">{maxConcurrentError}</p>
+            ) : null}
           </div>
         </SettingsField>
       </SettingsSection>

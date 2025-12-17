@@ -5,6 +5,31 @@ import { useUIStore } from '@/store/ui-store'
 import { useCommandContext } from './use-command-context'
 import { logger } from '@/lib/logger'
 
+function isTextInputTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false
+
+  const el = target.closest(
+    'input, textarea, [contenteditable="true"], [contenteditable=""], [role="textbox"]'
+  )
+  if (!el) return false
+
+  if (el instanceof HTMLInputElement) {
+    const nonTextTypes = new Set([
+      'button',
+      'checkbox',
+      'color',
+      'file',
+      'radio',
+      'range',
+      'reset',
+      'submit',
+    ])
+    return !nonTextTypes.has(el.type)
+  }
+
+  return true
+}
+
 /**
  * Main window event listeners - handles global keyboard shortcuts and other app-level events
  *
@@ -16,6 +41,8 @@ export function useMainWindowEventListeners() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isTextInputTarget(e.target)) return
+
       // Check for keyboard shortcuts
       if (e.metaKey || e.ctrlKey) {
         switch (e.key) {

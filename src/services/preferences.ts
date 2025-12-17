@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { toast } from 'sonner'
 import { logger } from '@/lib/logger'
 import type { AppPreferences } from '@/types/preferences'
+import { defaultPreferences } from '@/types/preferences'
 
 // Query keys for preferences
 export const preferencesQueryKeys = {
@@ -19,11 +20,11 @@ export function usePreferences() {
         logger.debug('Loading preferences from backend')
         const preferences = await invoke<AppPreferences>('load_preferences')
         logger.info('Preferences loaded successfully', { preferences })
-        return preferences
+        return { ...defaultPreferences, ...preferences }
       } catch (error) {
         // Return defaults if preferences file doesn't exist yet
         logger.warn('Failed to load preferences, using defaults', { error })
-        return { theme: 'system' }
+        return defaultPreferences
       }
     },
     staleTime: 1000 * 60 * 5, // 5 minutes
@@ -35,22 +36,36 @@ export function useSavePreferences() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (preferences: AppPreferences) => {
+    mutationFn: async (preferencesUpdate: Partial<AppPreferences>) => {
       try {
+        const current =
+          queryClient.getQueryData<AppPreferences>(
+            preferencesQueryKeys.preferences()
+          ) ?? defaultPreferences
+        const preferences: AppPreferences = { ...current, ...preferencesUpdate }
+
         logger.debug('Saving preferences to backend', { preferences })
         await invoke('save_preferences', { preferences })
         logger.info('Preferences saved successfully')
+        return preferences
       } catch (error) {
         const message =
           error instanceof Error ? error.message : 'Unknown error occurred'
-        logger.error('Failed to save preferences', { error, preferences })
+        logger.error('Failed to save preferences', { error, preferencesUpdate })
         toast.error('Failed to save preferences', { description: message })
         throw error
       }
     },
-    onSuccess: (_, preferences) => {
+    onSuccess: (_, preferencesUpdate) => {
       // Update the cache with the new preferences
-      queryClient.setQueryData(preferencesQueryKeys.preferences(), preferences)
+      const current =
+        queryClient.getQueryData<AppPreferences>(
+          preferencesQueryKeys.preferences()
+        ) ?? defaultPreferences
+      queryClient.setQueryData(preferencesQueryKeys.preferences(), {
+        ...current,
+        ...preferencesUpdate,
+      })
       logger.info('Preferences cache updated')
       toast.success('Preferences saved')
     },

@@ -6,6 +6,19 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Manager};
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum LocalPathKind {
+    File,
+    Folder,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ClassifiedPath {
+    path: String,
+    kind: LocalPathKind,
+}
+
 // Validation functions
 fn validate_filename(filename: &str) -> Result<(), String> {
     // Regex pattern: only alphanumeric, dash, underscore, dot
@@ -44,6 +57,23 @@ fn validate_theme(theme: &str) -> Result<(), String> {
     }
 }
 
+fn validate_max_concurrent_uploads(value: u8) -> Result<(), String> {
+    if (1..=10).contains(&value) {
+        Ok(())
+    } else {
+        Err("Invalid maximum concurrent uploads: must be between 1 and 10".to_string())
+    }
+}
+
+fn validate_service_account_json_path(path: &Option<String>) -> Result<(), String> {
+    let Some(path) = path else {
+        return Ok(());
+    };
+
+    validate_string_input(path, 1024, "Service account credentials folder path")?;
+    Ok(())
+}
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -60,18 +90,21 @@ fn greet(name: &str) -> String {
 // Preferences data structure
 // Only contains settings that should be persisted to disk
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(default)]
 pub struct AppPreferences {
     pub theme: String,
-    // Add new persistent preferences here, e.g.:
-    // pub auto_save: bool,
-    // pub language: String,
+    #[serde(alias = "serviceAccountJsonPath")]
+    pub service_account_folder_path: Option<String>,
+    pub max_concurrent_uploads: u8,
 }
 
 impl Default for AppPreferences {
     fn default() -> Self {
         Self {
             theme: "system".to_string(),
-            // Add defaults for new preferences here
+            service_account_folder_path: None,
+            max_concurrent_uploads: 3,
         }
     }
 }
@@ -117,6 +150,8 @@ async fn load_preferences(app: AppHandle) -> Result<AppPreferences, String> {
 async fn save_preferences(app: AppHandle, preferences: AppPreferences) -> Result<(), String> {
     // Validate theme value
     validate_theme(&preferences.theme)?;
+    validate_max_concurrent_uploads(preferences.max_concurrent_uploads)?;
+    validate_service_account_json_path(&preferences.service_account_folder_path)?;
 
     log::debug!("Saving preferences to disk: {preferences:?}");
     let prefs_path = get_preferences_path(&app)?;
@@ -343,6 +378,25 @@ async fn cleanup_old_recovery_files(app: AppHandle) -> Result<u32, String> {
     Ok(removed_count)
 }
 
+#[tauri::command]
+async fn classify_paths(paths: Vec<String>) -> Vec<ClassifiedPath> {
+    paths
+        .into_iter()
+        .map(|path| {
+            let kind = match std::fs::metadata(&path) {
+                Ok(metadata) if metadata.is_dir() => LocalPathKind::Folder,
+                Ok(_) => LocalPathKind::File,
+                Err(e) => {
+                    log::warn!("Failed to classify path {path:?}: {e}");
+                    LocalPathKind::File
+                }
+            };
+
+            ClassifiedPath { path, kind }
+        })
+        .collect()
+}
+
 // Create the native menu system
 fn create_app_menu(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     log::info!("Setting up native menu system");
@@ -514,7 +568,8 @@ pub fn run() {
             send_native_notification,
             save_emergency_data,
             load_emergency_data,
-            cleanup_old_recovery_files
+            cleanup_old_recovery_files,
+            classify_paths
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

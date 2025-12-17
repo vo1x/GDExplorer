@@ -14,8 +14,18 @@ export function ThemeProvider({
   storageKey = 'ui-theme',
   ...props
 }: ThemeProviderProps) {
+  const getStoredTheme = (): Theme | null => {
+    try {
+      const storage = globalThis.localStorage
+      if (!storage || typeof storage.getItem !== 'function') return null
+      return storage.getItem(storageKey) as Theme
+    } catch {
+      return null
+    }
+  }
+
   const [theme, setTheme] = useState<Theme>(
-    () => (localStorage.getItem(storageKey) as Theme) || defaultTheme
+    () => getStoredTheme() || defaultTheme
   )
 
   // Load theme from persistent preferences
@@ -54,7 +64,14 @@ export function ThemeProvider({
   const value = {
     theme,
     setTheme: (theme: Theme) => {
-      localStorage.setItem(storageKey, theme)
+      try {
+        const storage = globalThis.localStorage
+        if (storage && typeof storage.setItem === 'function') {
+          storage.setItem(storageKey, theme)
+        }
+      } catch {
+        // ignore storage errors
+      }
       setTheme(theme)
     },
   }
