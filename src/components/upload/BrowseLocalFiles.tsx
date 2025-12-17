@@ -32,10 +32,21 @@ function normalizeSelection(
 }
 
 export function BrowseLocalFiles() {
-  const { items, addFiles, addFolders, clear, setItemProgress, setItemStatus, resetUploadState } =
-    useLocalUploadQueue()
-  const { destinationUrl, destinationError, destinationFolderId, setDestinationUrl } =
-    useUploadDestinationStore()
+  const {
+    items,
+    addFiles,
+    addFolders,
+    clear,
+    setItemProgress,
+    setItemStatus,
+    resetUploadState,
+  } = useLocalUploadQueue()
+  const {
+    destinationUrl,
+    destinationError,
+    destinationFolderId,
+    setDestinationUrl,
+  } = useUploadDestinationStore()
   const { data: preferences } = usePreferences()
   const [isBrowsing, setIsBrowsing] = useState(false)
   const [isDropActive, setIsDropActive] = useState(false)
@@ -53,12 +64,17 @@ export function BrowseLocalFiles() {
       setSelectedPresetId('custom')
       return
     }
-    const match = destinationPresets.find(p => p.url.trim() === destinationUrl.trim())
+    const match = destinationPresets.find(
+      p => p.url.trim() === destinationUrl.trim()
+    )
     setSelectedPresetId(match ? match.id : 'custom')
   }, [destinationPresets, destinationUrl])
 
   const startUploadDisabled =
-    items.length === 0 || !destinationFolderId || destinationError || isUploading
+    items.length === 0 ||
+    !destinationFolderId ||
+    destinationError ||
+    isUploading
 
   const handleBrowse = async () => {
     if (isBrowsing) return
@@ -162,7 +178,9 @@ export function BrowseLocalFiles() {
     }
 
     setup().catch(error => {
-      logger.debug('Upload event listeners not available', { error: String(error) })
+      logger.debug('Upload event listeners not available', {
+        error: String(error),
+      })
     })
 
     return () => {
@@ -214,16 +232,23 @@ export function BrowseLocalFiles() {
                 }))
                 useLocalUploadQueue.getState().addItems(toAdd)
 
-                const addedCount = classified.filter(p => !existing.has(p.path))
-                  .length
+                const addedCount = classified.filter(
+                  p => !existing.has(p.path)
+                ).length
                 if (addedCount > 0) {
                   toast.success(`Added ${addedCount} items to queue`)
                 }
               } catch (error) {
-                logger.warn('Failed to classify dropped paths, defaulting to file', {
-                  error: String(error),
-                })
-                const toAdd = paths.map(path => ({ path, kind: 'file' as const }))
+                logger.warn(
+                  'Failed to classify dropped paths, defaulting to file',
+                  {
+                    error: String(error),
+                  }
+                )
+                const toAdd = paths.map(path => ({
+                  path,
+                  kind: 'file' as const,
+                }))
                 useLocalUploadQueue.getState().addItems(toAdd)
 
                 const addedCount = paths.filter(p => !existing.has(p)).length
@@ -271,8 +296,6 @@ export function BrowseLocalFiles() {
           </Alert>
         ) : null}
 
-        <div className="text-sm font-medium">File browser</div>
-
         <section className="space-y-2">
           <Label htmlFor="destination-url">Destination folder URL</Label>
           {destinationPresets.length > 0 ? (
@@ -298,33 +321,37 @@ export function BrowseLocalFiles() {
                   ))}
                 </SelectContent>
               </Select>
-              <div className="text-xs text-muted-foreground">
+              {/* <div className="text-xs text-muted-foreground">
                 Select a saved destination or enter a custom URL.
+              </div> */}
+
+              <div className='flex flex-col gap-0.5 w-full'>
+                <Input
+                  id="destination-url"
+                  value={destinationUrl}
+                  onChange={e => setDestinationUrl(e.target.value)}
+                  placeholder="https://drive.google.com/drive/folders/<FOLDER_ID>"
+                  aria-invalid={Boolean(destinationError)}
+                  className={
+                    destinationError
+                      ? 'border-destructive focus-visible:border-destructive focus-visible:ring-destructive/20'
+                      : destinationFolderId
+                        ? 'border-emerald-600 focus-visible:border-emerald-600 focus-visible:ring-emerald-600/25'
+                        : undefined
+                  }
+                />
+                {/* {destinationError ? (
+                  <p className="text-sm text-destructive">
+                    Please enter a Google Drive <em>folder</em> URL.
+                  </p>
+                ) : destinationFolderId ? (
+                  <p className="text-sm text-emerald-700 dark:text-emerald-400">
+                    Folder ID:{' '}
+                    <span className="font-mono">{destinationFolderId}</span>
+                  </p>
+                ) : null} */}
               </div>
             </div>
-          ) : null}
-          <Input
-            id="destination-url"
-            value={destinationUrl}
-            onChange={e => setDestinationUrl(e.target.value)}
-            placeholder="https://drive.google.com/drive/folders/<FOLDER_ID>"
-            aria-invalid={Boolean(destinationError)}
-            className={
-              destinationError
-                ? 'border-destructive focus-visible:border-destructive focus-visible:ring-destructive/20'
-                : destinationFolderId
-                  ? 'border-emerald-600 focus-visible:border-emerald-600 focus-visible:ring-emerald-600/25'
-                  : undefined
-            }
-          />
-          {destinationError ? (
-            <p className="text-sm text-destructive">
-              Please enter a Google Drive <em>folder</em> URL.
-            </p>
-          ) : destinationFolderId ? (
-            <p className="text-sm text-emerald-700 dark:text-emerald-400">
-              Folder ID: <span className="font-mono">{destinationFolderId}</span>
-            </p>
           ) : null}
         </section>
 
@@ -332,30 +359,24 @@ export function BrowseLocalFiles() {
           aria-label="Drop zone"
           className={cn(
             'w-full rounded-md border border-dashed p-8 text-center transition-colors',
-            isDropActive ? 'border-primary bg-primary/5' : 'border-border bg-muted/20'
+            isDropActive
+              ? 'border-primary bg-primary/5'
+              : 'border-border bg-muted/20'
           )}
         >
           <div className="text-base font-medium">
             Drop files &amp; folders here
           </div>
-          <div className="mt-1 text-sm text-muted-foreground">
-            or use Browse…
+          <div className="my-2 text-sm text-muted-foreground">
+            or 
           </div>
+          <Button type="button" onClick={handleBrowse} disabled={isBrowsing}>
+              {isBrowsing ? 'Browsing…' : 'Browse…'}
+          </Button>
         </section>
 
         <section className="flex flex-col items-start gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" onClick={handleBrowse} disabled={isBrowsing}>
-              {isBrowsing ? 'Browsing…' : 'Browse…'}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={clear}
-              disabled={items.length === 0}
-            >
-              Clear queue
-            </Button>
             <Button
               type="button"
               disabled={startUploadDisabled}
@@ -379,11 +400,11 @@ export function BrowseLocalFiles() {
             </div>
             <div className="text-sm font-medium">Upload queue is empty</div>
             <div className="mt-1 text-sm text-muted-foreground">
-	              Click Browse… to add files and folders.
-	            </div>
-	          </section>
-	        )}
-	      </div>
-	    </div>
-	  )
+              Click Browse… to add files and folders.
+            </div>
+          </section>
+        )}
+      </div>
+    </div>
+  )
 }
