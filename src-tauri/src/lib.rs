@@ -4,9 +4,44 @@ use serde_json::Value;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 mod upload;
+#[derive(Default)]
+struct UploadControlState(tokio::sync::Mutex<Option<UploadControl>>);
+
+#[derive(Clone)]
+struct UploadControl {
+    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pause_tx: tokio::sync::watch::Sender<bool>,
+}
+
+impl UploadControl {
+    fn new() -> Self {
+        let (pause_tx, _pause_rx) = tokio::sync::watch::channel(false);
+        Self {
+            cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            pause_tx,
+        }
+    }
+
+    fn cancel(&self) {
+        self.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        // Ensure any paused workers can wake up and observe cancellation.
+        let _ = self.pause_tx.send(false);
+    }
+
+    fn set_paused(&self, paused: bool) {
+        let _ = self.pause_tx.send(paused);
+    }
+
+    fn handle(&self) -> upload::scheduler::UploadControlHandle {
+        upload::scheduler::UploadControlHandle {
+            cancel: self.cancel.clone(),
+            pause_rx: self.pause_tx.subscribe(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -29,7 +64,11 @@ struct StartUploadArgs {
 }
 
 #[tauri::command]
-async fn start_upload(window: tauri::Window, args: StartUploadArgs) -> Result<(), String> {
+async fn start_upload(
+    window: tauri::Window,
+    state: State<'_, UploadControlState>,
+    args: StartUploadArgs,
+) -> Result<(), String> {
     let app = window.app_handle();
     let preferences = load_preferences(app.clone()).await?;
 
@@ -42,6 +81,22 @@ async fn start_upload(window: tauri::Window, args: StartUploadArgs) -> Result<()
 
     let queue_items = args.queue_items;
     let destination_folder_id = args.destination_folder_id;
+
+    // Cancel any existing upload job (best-effort).
+    {
+        let mut guard = state.0.lock().await;
+        if let Some(existing) = guard.take() {
+            existing.cancel();
+        }
+    }
+
+    // Create a new upload control handle for this run.
+    let control = UploadControl::new();
+    let control_handle = control.handle();
+    {
+        let mut guard = state.0.lock().await;
+        *guard = Some(control);
+    }
 
     // Build SA pool and run a preflight check in-command so we can return actionable errors to the UI.
     let pool = upload::scheduler::build_drive_pool(&service_account_folder)?;
@@ -65,6 +120,7 @@ async fn start_upload(window: tauri::Window, args: StartUploadArgs) -> Result<()
         if let Err(e) = upload::scheduler::run_upload_job_with_pool(
             app_for_task,
             pool,
+            control_handle,
             max_concurrent,
             queue_items,
             destination_folder_id,
@@ -78,6 +134,24 @@ async fn start_upload(window: tauri::Window, args: StartUploadArgs) -> Result<()
     Ok(())
 }
 
+#[tauri::command]
+async fn pause_upload(state: State<'_, UploadControlState>, paused: bool) -> Result<(), String> {
+    let guard = state.0.lock().await;
+    let Some(control) = guard.as_ref() else {
+        return Ok(());
+    };
+    control.set_paused(paused);
+    Ok(())
+}
+
+#[tauri::command]
+async fn cancel_upload(state: State<'_, UploadControlState>) -> Result<(), String> {
+    let mut guard = state.0.lock().await;
+    if let Some(control) = guard.take() {
+        control.cancel();
+    }
+    Ok(())
+}
 // Validation functions
 fn validate_filename(filename: &str) -> Result<(), String> {
     // Regex pattern: only alphanumeric, dash, underscore, dot
@@ -133,6 +207,24 @@ fn validate_service_account_json_path(path: &Option<String>) -> Result<(), Strin
     Ok(())
 }
 
+fn validate_destination_presets(presets: &[DestinationPreset]) -> Result<(), String> {
+    if presets.len() > 50 {
+        return Err("Too many destination presets (max 50).".to_string());
+    }
+    for (i, p) in presets.iter().enumerate() {
+        validate_string_input(&p.id, 64, "Destination preset id")?;
+        validate_string_input(&p.name, 80, "Destination preset name")?;
+        validate_string_input(&p.url, 1024, "Destination preset URL")?;
+        if p.name.trim().is_empty() {
+            return Err(format!("Destination preset name cannot be empty (index {i})"));
+        }
+        if p.url.trim().is_empty() {
+            return Err(format!("Destination preset URL cannot be empty (index {i})"));
+        }
+    }
+    Ok(())
+}
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -150,12 +242,21 @@ fn greet(name: &str) -> String {
 // Only contains settings that should be persisted to disk
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct DestinationPreset {
+    pub id: String,
+    pub name: String,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 #[serde(default)]
 pub struct AppPreferences {
     pub theme: String,
     #[serde(alias = "serviceAccountJsonPath")]
     pub service_account_folder_path: Option<String>,
     pub max_concurrent_uploads: u8,
+    pub destination_presets: Vec<DestinationPreset>,
 }
 
 impl Default for AppPreferences {
@@ -164,6 +265,7 @@ impl Default for AppPreferences {
             theme: "system".to_string(),
             service_account_folder_path: None,
             max_concurrent_uploads: 3,
+            destination_presets: Vec::new(),
         }
     }
 }
@@ -211,6 +313,7 @@ async fn save_preferences(app: AppHandle, preferences: AppPreferences) -> Result
     validate_theme(&preferences.theme)?;
     validate_max_concurrent_uploads(preferences.max_concurrent_uploads)?;
     validate_service_account_json_path(&preferences.service_account_folder_path)?;
+    validate_destination_presets(&preferences.destination_presets)?;
 
     log::debug!("Saving preferences to disk: {preferences:?}");
     let prefs_path = get_preferences_path(&app)?;
@@ -509,6 +612,7 @@ fn create_app_menu(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(UploadControlState::default())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
@@ -629,7 +733,9 @@ pub fn run() {
             load_emergency_data,
             cleanup_old_recovery_files,
             classify_paths,
-            start_upload
+            start_upload,
+            pause_upload,
+            cancel_upload
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

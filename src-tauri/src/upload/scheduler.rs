@@ -8,7 +8,19 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, watch, Mutex};
+
+#[derive(Clone)]
+pub struct UploadControlHandle {
+    pub cancel: Arc<std::sync::atomic::AtomicBool>,
+    pub pause_rx: watch::Receiver<bool>,
+}
+
+impl UploadControlHandle {
+    pub fn is_canceled(&self) -> bool {
+        self.cancel.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
 
 pub fn build_drive_pool(service_account_folder: &str) -> Result<DrivePool, String> {
     let folder = PathBuf::from(service_account_folder);
@@ -71,6 +83,7 @@ pub struct QueueItemInput {
 pub async fn run_upload_job_with_pool(
     app: AppHandle,
     pool: DrivePool,
+    control: UploadControlHandle,
     max_concurrent: u8,
     queue: Vec<QueueItemInput>,
     destination_folder_id: String,
@@ -90,6 +103,7 @@ pub async fn run_upload_job_with_pool(
     for _ in 0..concurrency {
         let app = app.clone();
         let pool = pool.clone();
+        let control = control.clone();
         let rx = rx.clone();
         let per_item_totals = per_item_totals.clone();
         let per_item_sent = per_item_sent.clone();
@@ -97,6 +111,9 @@ pub async fn run_upload_job_with_pool(
 
         worker_handles.push(tokio::spawn(async move {
             loop {
+                if control.is_canceled() {
+                    break;
+                }
                 let task = {
                     let mut guard = rx.lock().await;
                     guard.recv().await
@@ -106,7 +123,14 @@ pub async fn run_upload_job_with_pool(
                 let client = pool.next_client();
                 let sa_email = client.sa_email().to_string();
                 let result =
-                    upload_one_file(&client, &app, &task, per_item_totals.clone(), per_item_sent.clone())
+                    upload_one_file(
+                        &client,
+                        &control,
+                        &app,
+                        &task,
+                        per_item_totals.clone(),
+                        per_item_sent.clone(),
+                    )
                         .await;
                 if let Err(e) = &result {
                     let mut failed = per_item_failed.lock().await;
@@ -130,6 +154,9 @@ pub async fn run_upload_job_with_pool(
     }
 
     for item in &queue {
+        if control.is_canceled() {
+            break;
+        }
         let _ = app.emit(
             "upload:item_status",
             ItemStatusEvent {
@@ -183,6 +210,9 @@ pub async fn run_upload_job_with_pool(
         );
 
         for task in tasks {
+            if control.is_canceled() {
+                break;
+            }
             // If workers have exited unexpectedly, this will error; treat it as fatal.
             tx.send(task)
                 .await
@@ -246,11 +276,15 @@ pub async fn run_upload_job_with_pool(
 
 async fn upload_one_file(
     client: &DriveClient,
+    control: &UploadControlHandle,
     app: &AppHandle,
     task: &UploadTask,
     per_item_totals: Arc<Mutex<HashMap<String, u64>>>,
     per_item_sent: Arc<Mutex<HashMap<String, u64>>>,
 ) -> Result<(), String> {
+    if control.is_canceled() {
+        return Err("Upload canceled".to_string());
+    }
     let mut file = tokio::fs::File::open(&task.local_file_path)
         .await
         .map_err(|e| format!("Failed to open file: {e}"))?;
@@ -269,6 +303,11 @@ async fn upload_one_file(
     let chunk_size: usize = 8 * 1024 * 1024;
 
     loop {
+        if control.is_canceled() {
+            return Err("Upload canceled".to_string());
+        }
+        wait_if_paused(control).await?;
+
         let chunk = read_file_chunk(&mut file, &mut buf, chunk_size).await?;
         if chunk.is_empty() {
             break;
@@ -303,6 +342,28 @@ async fn upload_one_file(
                 total_bytes: total,
             },
         );
+    }
+
+    Ok(())
+}
+
+async fn wait_if_paused(control: &UploadControlHandle) -> Result<(), String> {
+    if control.is_canceled() {
+        return Err("Upload canceled".to_string());
+    }
+
+    let mut rx = control.pause_rx.clone();
+    if !*rx.borrow() {
+        return Ok(());
+    }
+
+    while *rx.borrow() {
+        if control.is_canceled() {
+            return Err("Upload canceled".to_string());
+        }
+        rx.changed()
+            .await
+            .map_err(|_| "Pause channel closed".to_string())?;
     }
 
     Ok(())

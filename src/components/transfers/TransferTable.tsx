@@ -1,5 +1,16 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { invoke } from '@tauri-apps/api/core'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { useLocalUploadQueue } from '@/store/local-upload-queue-store'
 import { useTransferUiStore } from '@/store/transfer-ui-store'
 import { TransferRow } from './TransferRow'
@@ -14,6 +25,8 @@ export function TransferTable() {
   const items = useLocalUploadQueue(s => s.items)
   const remove = useLocalUploadQueue(s => s.remove)
   const clear = useLocalUploadQueue(s => s.clear)
+  const [clearDialogOpen, setClearDialogOpen] = useState(false)
+  const [clearPending, setClearPending] = useState(false)
 
   const pauseAll = useTransferUiStore(s => s.pauseAll)
   const resumeAll = useTransferUiStore(s => s.resumeAll)
@@ -63,7 +76,10 @@ export function TransferTable() {
             type="button"
             variant="secondary"
             size="sm"
-            onClick={() => pauseAll(ids)}
+            onClick={() => {
+              pauseAll(ids)
+              invoke('pause_upload', { paused: true }).catch(() => {})
+            }}
             disabled={ids.length === 0}
           >
             Pause all
@@ -72,7 +88,10 @@ export function TransferTable() {
             type="button"
             variant="secondary"
             size="sm"
-            onClick={() => resumeAll(ids)}
+            onClick={() => {
+              resumeAll(ids)
+              invoke('pause_upload', { paused: false }).catch(() => {})
+            }}
             disabled={ids.length === 0}
           >
             Resume all
@@ -94,13 +113,44 @@ export function TransferTable() {
             type="button"
             variant="ghost"
             size="sm"
-            onClick={clear}
+            onClick={() => setClearDialogOpen(true)}
             disabled={items.length === 0}
           >
             Clear
           </Button>
         </div>
       </div>
+
+      <AlertDialog open={clearDialogOpen} onOpenChange={open => !clearPending && setClearDialogOpen(open)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear all transfers?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will stop uploads in progress and clear the list.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={clearPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={clearPending}
+              onClick={async () => {
+                setClearPending(true)
+                try {
+                  await invoke('cancel_upload')
+                } catch {
+                  // ignore; UI state still clears
+                } finally {
+                  clear()
+                  setClearPending(false)
+                  setClearDialogOpen(false)
+                }
+              }}
+            >
+              Clear
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="min-h-0 flex-1 overflow-auto rounded-md border">
         <div

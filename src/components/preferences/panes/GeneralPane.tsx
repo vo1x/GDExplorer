@@ -5,6 +5,8 @@ import { Separator } from '@/components/ui/separator'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { usePreferences, useSavePreferences } from '@/services/preferences'
+import type { DestinationPreset } from '@/types/preferences'
+import { extractDriveFolderId } from '@/lib/drive-url'
 
 const SettingsField: React.FC<{
   label: string
@@ -43,6 +45,12 @@ export const GeneralPane: React.FC = () => {
   const [maxConcurrentInput, setMaxConcurrentInput] = useState<string>('3')
   const [lastSavedMaxConcurrent, setLastSavedMaxConcurrent] = useState(3)
 
+  const [destinationPresetsDraft, setDestinationPresetsDraft] = useState<
+    DestinationPreset[]
+  >([])
+  const [newPresetName, setNewPresetName] = useState('')
+  const [newPresetUrl, setNewPresetUrl] = useState('')
+
   useEffect(() => {
     if (!preferences) return
     const folder = preferences.serviceAccountFolderPath ?? ''
@@ -50,6 +58,7 @@ export const GeneralPane: React.FC = () => {
     setLastSavedServiceAccountFolder(folder)
     setMaxConcurrentInput(String(preferences.maxConcurrentUploads ?? 3))
     setLastSavedMaxConcurrent(preferences.maxConcurrentUploads ?? 3)
+    setDestinationPresetsDraft(preferences.destinationPresets ?? [])
   }, [preferences])
 
   const maxConcurrentError = useMemo(() => {
@@ -96,6 +105,70 @@ export const GeneralPane: React.FC = () => {
       })
   }
 
+  const presetErrors = useMemo(() => {
+    const byId: Record<string, string | null> = {}
+    for (const preset of destinationPresetsDraft) {
+      if (!preset.name.trim()) {
+        byId[preset.id] = 'Name is required.'
+        continue
+      }
+      const folderId = extractDriveFolderId(preset.url)
+      if (!folderId) {
+        byId[preset.id] = 'Please enter a Google Drive folder URL.'
+        continue
+      }
+      byId[preset.id] = null
+    }
+    return byId
+  }, [destinationPresetsDraft])
+
+  const newPresetError = useMemo(() => {
+    if (!newPresetName.trim() && !newPresetUrl.trim()) return null
+    if (!newPresetName.trim()) return 'Name is required.'
+    if (!extractDriveFolderId(newPresetUrl)) {
+      return 'Please enter a Google Drive folder URL.'
+    }
+    return null
+  }, [newPresetName, newPresetUrl])
+
+  const handleSaveDestinationPresets = async () => {
+    const hasErrors = destinationPresetsDraft.some(
+      p => presetErrors[p.id] !== null
+    )
+    if (hasErrors) return
+
+    const uniqueByUrl = new Set<string>()
+    const deduped: DestinationPreset[] = []
+    for (const p of destinationPresetsDraft) {
+      const url = p.url.trim()
+      if (uniqueByUrl.has(url)) continue
+      uniqueByUrl.add(url)
+      deduped.push({ ...p, name: p.name.trim(), url })
+    }
+
+    try {
+      await savePreferences.mutateAsync({ destinationPresets: deduped })
+      setDestinationPresetsDraft(deduped)
+    } catch {
+      // Reset to last saved value (from query cache)
+      setDestinationPresetsDraft(preferences?.destinationPresets ?? [])
+    }
+  }
+
+  const addPreset = () => {
+    if (newPresetError) return
+    const url = newPresetUrl.trim()
+    const name = newPresetName.trim()
+    const preset: DestinationPreset = {
+      id: generateId(),
+      name,
+      url,
+    }
+    setDestinationPresetsDraft(curr => [preset, ...curr])
+    setNewPresetName('')
+    setNewPresetUrl('')
+  }
+
   return (
     <div className="space-y-6">
       <SettingsSection title="Uploads">
@@ -136,7 +209,115 @@ export const GeneralPane: React.FC = () => {
             ) : null}
           </div>
         </SettingsField>
+
+        <SettingsField
+          label="Destination presets"
+          description="Save commonly used Google Drive folder URLs to quickly select them later."
+        >
+          <div className="space-y-3">
+            <div className="grid gap-2 sm:grid-cols-[160px_1fr_auto]">
+              <Input
+                value={newPresetName}
+                onChange={e => setNewPresetName(e.target.value)}
+                placeholder="Name (e.g. Shared Drive)"
+              />
+              <Input
+                value={newPresetUrl}
+                onChange={e => setNewPresetUrl(e.target.value)}
+                placeholder="https://drive.google.com/drive/folders/<FOLDER_ID>"
+                aria-invalid={Boolean(newPresetError)}
+              />
+              <Button type="button" onClick={addPreset}>
+                Add
+              </Button>
+            </div>
+            {newPresetError ? (
+              <p className="text-sm text-destructive">{newPresetError}</p>
+            ) : null}
+
+            <div className="space-y-2">
+              {destinationPresetsDraft.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No presets yet.
+                </p>
+              ) : (
+                destinationPresetsDraft.map(preset => (
+                  <div
+                    key={preset.id}
+                    className="grid gap-2 sm:grid-cols-[160px_1fr_auto]"
+                  >
+                    <Input
+                      value={preset.name}
+                      onChange={e =>
+                        setDestinationPresetsDraft(curr =>
+                          curr.map(p =>
+                            p.id === preset.id
+                              ? { ...p, name: e.target.value }
+                              : p
+                          )
+                        )
+                      }
+                    />
+                    <Input
+                      value={preset.url}
+                      onChange={e =>
+                        setDestinationPresetsDraft(curr =>
+                          curr.map(p =>
+                            p.id === preset.id
+                              ? { ...p, url: e.target.value }
+                              : p
+                          )
+                        )
+                      }
+                      aria-invalid={Boolean(presetErrors[preset.id])}
+                    />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() =>
+                        setDestinationPresetsDraft(curr =>
+                          curr.filter(p => p.id !== preset.id)
+                        )
+                      }
+                    >
+                      Remove
+                    </Button>
+                    {presetErrors[preset.id] ? (
+                      <p className="text-sm text-destructive sm:col-span-3">
+                        {presetErrors[preset.id]}
+                      </p>
+                    ) : null}
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                onClick={handleSaveDestinationPresets}
+                disabled={savePreferences.isPending}
+              >
+                Save presets
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() =>
+                  setDestinationPresetsDraft(preferences?.destinationPresets ?? [])
+                }
+                disabled={savePreferences.isPending}
+              >
+                Reset
+              </Button>
+            </div>
+          </div>
+        </SettingsField>
       </SettingsSection>
     </div>
   )
+}
+
+function generateId(): string {
+  return `preset_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
 }

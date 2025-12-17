@@ -27,7 +27,6 @@ import {
 import { useUIStore } from '@/store/ui-store'
 import { GeneralPane } from './panes/GeneralPane'
 import { AppearancePane } from './panes/AppearancePane'
-import { AdvancedPane } from './panes/AdvancedPane'
 
 type PreferencePane = 'general' | 'appearance' | 'advanced'
 
@@ -42,11 +41,6 @@ const navigationItems = [
     name: 'Appearance',
     icon: Palette,
   },
-  {
-    id: 'advanced' as const,
-    name: 'Advanced',
-    icon: Zap,
-  },
 ]
 
 const getPaneTitle = (pane: PreferencePane): string => {
@@ -55,8 +49,6 @@ const getPaneTitle = (pane: PreferencePane): string => {
       return 'General'
     case 'appearance':
       return 'Appearance'
-    case 'advanced':
-      return 'Advanced'
     default:
       return 'General'
   }
@@ -124,7 +116,6 @@ export function PreferencesDialog() {
             <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4 pt-0 max-h-[calc(600px-4rem)]">
               {activePane === 'general' && <GeneralPane />}
               {activePane === 'appearance' && <AppearancePane />}
-              {activePane === 'advanced' && <AdvancedPane />}
             </div>
           </main>
         </SidebarProvider>

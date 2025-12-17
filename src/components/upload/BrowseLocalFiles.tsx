@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
@@ -9,12 +9,20 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Separator } from '@/components/ui/separator'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { useLocalUploadQueue } from '@/store/local-upload-queue-store'
 import { useUploadDestinationStore } from '@/store/upload-destination-store'
 import { TransferTable } from '@/components/transfers/TransferTable'
 import { toast } from 'sonner'
 import { logger } from '@/lib/logger'
+import { usePreferences } from '@/services/preferences'
 
 function normalizeSelection(
   selection: string | string[] | null
@@ -28,10 +36,26 @@ export function BrowseLocalFiles() {
     useLocalUploadQueue()
   const { destinationUrl, destinationError, destinationFolderId, setDestinationUrl } =
     useUploadDestinationStore()
+  const { data: preferences } = usePreferences()
   const [isBrowsing, setIsBrowsing] = useState(false)
   const [isDropActive, setIsDropActive] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [errorBanner, setErrorBanner] = useState<string | null>(null)
+  const [selectedPresetId, setSelectedPresetId] = useState<string>('custom')
+
+  const destinationPresets = useMemo(
+    () => preferences?.destinationPresets ?? [],
+    [preferences?.destinationPresets]
+  )
+
+  useEffect(() => {
+    if (!destinationUrl.trim()) {
+      setSelectedPresetId('custom')
+      return
+    }
+    const match = destinationPresets.find(p => p.url.trim() === destinationUrl.trim())
+    setSelectedPresetId(match ? match.id : 'custom')
+  }, [destinationPresets, destinationUrl])
 
   const startUploadDisabled =
     items.length === 0 || !destinationFolderId || destinationError || isUploading
@@ -251,6 +275,34 @@ export function BrowseLocalFiles() {
 
         <section className="space-y-2">
           <Label htmlFor="destination-url">Destination folder URL</Label>
+          {destinationPresets.length > 0 ? (
+            <div className="flex items-center gap-2">
+              <Select
+                value={selectedPresetId}
+                onValueChange={value => {
+                  setSelectedPresetId(value)
+                  if (value === 'custom') return
+                  const preset = destinationPresets.find(p => p.id === value)
+                  if (preset) setDestinationUrl(preset.url)
+                }}
+              >
+                <SelectTrigger className="w-[260px]" size="sm">
+                  <SelectValue placeholder="Custom" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="custom">Custom</SelectItem>
+                  {destinationPresets.map(p => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="text-xs text-muted-foreground">
+                Select a saved destination or enter a custom URL.
+              </div>
+            </div>
+          ) : null}
           <Input
             id="destination-url"
             value={destinationUrl}
