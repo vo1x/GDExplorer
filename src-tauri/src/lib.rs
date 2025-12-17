@@ -625,11 +625,6 @@ fn create_app_menu(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error
                 .accelerator("CmdOrCtrl+1")
                 .build(app)?,
         )
-        .item(
-            &MenuItemBuilder::with_id("toggle-right-sidebar", "Toggle Right Sidebar")
-                .accelerator("CmdOrCtrl+2")
-                .build(app)?,
-        )
         .build()?;
 
     // Build the main menu with submenus
@@ -730,18 +725,6 @@ pub fn run() {
                             }
                             Err(e) => {
                                 log::error!("Failed to emit menu-toggle-left-sidebar event: {e}")
-                            }
-                        }
-                    }
-                    "toggle-right-sidebar" => {
-                        log::info!("Toggle Right Sidebar menu item clicked");
-                        // Emit event to React for handling
-                        match app.emit("menu-toggle-right-sidebar", ()) {
-                            Ok(_) => {
-                                log::debug!("Successfully emitted menu-toggle-right-sidebar event")
-                            }
-                            Err(e) => {
-                                log::error!("Failed to emit menu-toggle-right-sidebar event: {e}")
                             }
                         }
                     }

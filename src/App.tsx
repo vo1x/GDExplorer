@@ -1,7 +1,6 @@
 import { useEffect } from 'react'
 import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
-import { initializeCommandSystem } from './lib/commands'
 import { logger } from './lib/logger'
 import { cleanupOldFiles } from './lib/recovery'
 import './App.css'
@@ -13,8 +12,6 @@ function App() {
   // Initialize command system and cleanup on app startup
   useEffect(() => {
     logger.info('🚀 Frontend application starting up')
-    initializeCommandSystem()
-    logger.debug('Command system initialized')
 
     // Clean up old recovery files on startup
     cleanupOldFiles().catch(error => {

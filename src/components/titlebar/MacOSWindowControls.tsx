@@ -1,8 +1,6 @@
 import React, { useEffect, useState, type HTMLProps } from 'react'
 import { cn } from '@/lib/utils'
 import { Icons } from './WindowControlIcons'
-import { useCommandContext } from '@/hooks/use-command-context'
-import { executeCommand } from '@/lib/commands'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
 interface MacOSWindowControlsProps extends HTMLProps<HTMLDivElement> {
@@ -13,7 +11,6 @@ export function MacOSWindowControls({
   className,
   ...props
 }: MacOSWindowControlsProps) {
-  const context = useCommandContext()
   const [isAltKeyPressed, setIsAltKeyPressed] = useState(false)
   const [isHovering, setIsHovering] = useState(false)
   const [isWindowFocused, setIsWindowFocused] = useState(true)
@@ -85,11 +82,11 @@ export function MacOSWindowControls({
   }, [])
 
   const handleClose = async () => {
-    await executeCommand('window-close', context)
+    await getCurrentWindow().close()
   }
 
   const handleMinimize = async () => {
-    await executeCommand('window-minimize', context)
+    await getCurrentWindow().minimize()
   }
 
   const handleMaximizeOrFullscreen = async () => {
@@ -99,21 +96,19 @@ export function MacOSWindowControls({
 
       if (isFullscreen) {
         // If currently fullscreen, exit fullscreen regardless of Alt key
-        await executeCommand('window-exit-fullscreen', context)
+        await appWindow.setFullscreen(false)
       } else if (isAltKeyPressed) {
         // Alt + click: toggle maximize/restore
-        await executeCommand('window-toggle-maximize', context)
+        await appWindow.toggleMaximize()
       } else {
         // Normal click: enter fullscreen
-        await executeCommand('window-fullscreen', context)
+        await appWindow.setFullscreen(true)
       }
     } catch {
       // Fallback to the original behavior if there's an error
-      if (isAltKeyPressed) {
-        await executeCommand('window-toggle-maximize', context)
-      } else {
-        await executeCommand('window-fullscreen', context)
-      }
+      const appWindow = getCurrentWindow()
+      if (isAltKeyPressed) await appWindow.toggleMaximize()
+      else await appWindow.setFullscreen(true)
     }
   }
 

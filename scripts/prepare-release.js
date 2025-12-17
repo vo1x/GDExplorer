@@ -158,12 +158,8 @@ async function prepareRelease() {
       exec('git push origin main --tags')
 
       console.log(`\n🎊 Release ${tagVersion} has been published!`)
-      console.log(
-        '📱 Check GitHub Actions: https://github.com/YOUR_USERNAME/YOUR_REPO/actions'
-      )
-      console.log(
-        '📦 Draft release will appear at: https://github.com/YOUR_USERNAME/YOUR_REPO/releases'
-      )
+      console.log('📱 Check GitHub Actions: https://github.com/vo1x/GDExplorer/actions')
+      console.log('📦 Draft release will appear at: https://github.com/vo1x/GDExplorer/releases')
       console.log(
         '\n⚠️  Remember: You need to manually publish the draft release on GitHub!'
       )

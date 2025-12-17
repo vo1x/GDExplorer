@@ -2,7 +2,6 @@ import { cn } from '@/lib/utils'
 import { MacOSWindowControls } from './MacOSWindowControls'
 import { Button } from '@/components/ui/button'
 import { useUIStore } from '@/store/ui-store'
-import { executeCommand, useCommandContext } from '@/lib/commands'
 import { PanelLeft, PanelLeftClose, Settings } from 'lucide-react'
 
 interface TitleBarProps {
@@ -11,8 +10,8 @@ interface TitleBarProps {
 }
 
 export function TitleBar({ className, title = 'GDExplorer' }: TitleBarProps) {
-  const { leftSidebarVisible, toggleLeftSidebar } = useUIStore()
-  const commandContext = useCommandContext()
+  const { leftSidebarVisible, toggleLeftSidebar, setPreferencesOpen } =
+    useUIStore()
   return (
     <div
       data-tauri-drag-region
@@ -53,7 +52,7 @@ export function TitleBar({ className, title = 'GDExplorer' }: TitleBarProps) {
       {/* Right side - Right Actions */}
       <div className="flex items-center gap-1 pr-2">
         <Button
-          onClick={() => executeCommand('open-preferences', commandContext)}
+          onClick={() => setPreferencesOpen(true)}
           variant="ghost"
           size="icon"
           className="h-6 w-6 text-foreground/70 hover:text-foreground"

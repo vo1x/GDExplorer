@@ -2,8 +2,8 @@ import { useEffect } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { check } from '@tauri-apps/plugin-updater'
 import { useUIStore } from '@/store/ui-store'
-import { useCommandContext } from './use-command-context'
 import { logger } from '@/lib/logger'
+import { toast } from 'sonner'
 
 function isTextInputTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false
@@ -37,8 +37,6 @@ function isTextInputTarget(target: EventTarget | null): boolean {
  * the MainWindow component clean while maintaining good separation of concerns.
  */
 export function useMainWindowEventListeners() {
-  const commandContext = useCommandContext()
-
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isTextInputTarget(e.target)) return
@@ -48,7 +46,7 @@ export function useMainWindowEventListeners() {
         switch (e.key) {
           case ',': {
             e.preventDefault()
-            commandContext.openPreferences()
+            useUIStore.getState().setPreferencesOpen(true)
             break
           }
           case '1': {
@@ -56,13 +54,6 @@ export function useMainWindowEventListeners() {
             const { leftSidebarVisible, setLeftSidebarVisible } =
               useUIStore.getState()
             setLeftSidebarVisible(!leftSidebarVisible)
-            break
-          }
-          case '2': {
-            e.preventDefault()
-            const { rightSidebarVisible, setRightSidebarVisible } =
-              useUIStore.getState()
-            setRightSidebarVisible(!rightSidebarVisible)
             break
           }
         }
@@ -87,25 +78,19 @@ export function useMainWindowEventListeners() {
           try {
             const update = await check()
             if (update) {
-              commandContext.showToast(
-                `Update available: ${update.version}`,
-                'info'
-              )
+              toast(`Update available: ${update.version}`)
             } else {
-              commandContext.showToast(
-                'You are running the latest version',
-                'success'
-              )
+              toast.success('You are running the latest version')
             }
           } catch (error) {
             logger.error('Update check failed:', { error: String(error) })
-            commandContext.showToast('Failed to check for updates', 'error')
+            toast.error('Failed to check for updates')
           }
         }),
 
         listen('menu-preferences', () => {
           logger.debug('Preferences menu event received')
-          commandContext.openPreferences()
+          useUIStore.getState().setPreferencesOpen(true)
         }),
 
         listen('menu-toggle-left-sidebar', () => {
@@ -113,13 +98,6 @@ export function useMainWindowEventListeners() {
           const { leftSidebarVisible, setLeftSidebarVisible } =
             useUIStore.getState()
           setLeftSidebarVisible(!leftSidebarVisible)
-        }),
-
-        listen('menu-toggle-right-sidebar', () => {
-          logger.debug('Toggle right sidebar menu event received')
-          const { rightSidebarVisible, setRightSidebarVisible } =
-            useUIStore.getState()
-          setRightSidebarVisible(!rightSidebarVisible)
         }),
       ])
 
@@ -149,7 +127,7 @@ export function useMainWindowEventListeners() {
         }
       })
     }
-  }, [commandContext])
+  }, [])
 
   // Future: Other global event listeners can be added here
   // useWindowFocusListeners()
