@@ -4,6 +4,7 @@ export interface AppPreferences {
   theme: string
   serviceAccountFolderPath: string | null
   maxConcurrentUploads: number
+  uploadChunkSizeMiB: number
   destinationPresets: DestinationPreset[]
 }
 
@@ -17,5 +18,6 @@ export const defaultPreferences: AppPreferences = {
   theme: 'system',
   serviceAccountFolderPath: null,
   maxConcurrentUploads: 3,
+  uploadChunkSizeMiB: 8,
   destinationPresets: [],
 }

@@ -101,6 +101,8 @@ async fn start_upload(
         .ok_or_else(|| "Service Account folder path is not set in Preferences.".to_string())?;
 
     let max_concurrent = preferences.max_concurrent_uploads;
+    let chunk_size_mib = preferences.upload_chunk_size_mib;
+    let chunk_size_bytes = (chunk_size_mib as usize).saturating_mul(1024 * 1024);
 
     let queue_items = args.queue_items;
     let destination_folder_id = args.destination_folder_id;
@@ -150,6 +152,7 @@ async fn start_upload(
             pool,
             control_handle,
             max_concurrent,
+            chunk_size_bytes,
             queue_items,
             destination_folder_id,
         )
@@ -240,6 +243,16 @@ fn validate_max_concurrent_uploads(value: u8) -> Result<(), String> {
     }
 }
 
+fn validate_upload_chunk_size_mib(value: u32) -> Result<(), String> {
+    // MiB, must be a multiple of 1 MiB; Drive requires chunk sizes aligned to 256KiB,
+    // and any whole MiB satisfies that.
+    if (1..=64).contains(&value) {
+        Ok(())
+    } else {
+        Err("Invalid upload chunk size: must be between 1 and 64 MiB".to_string())
+    }
+}
+
 fn validate_service_account_json_path(path: &Option<String>) -> Result<(), String> {
     let Some(path) = path else {
         return Ok(());
@@ -302,6 +315,7 @@ pub struct AppPreferences {
     #[serde(alias = "serviceAccountJsonPath")]
     pub service_account_folder_path: Option<String>,
     pub max_concurrent_uploads: u8,
+    pub upload_chunk_size_mib: u32,
     pub destination_presets: Vec<DestinationPreset>,
 }
 
@@ -311,6 +325,7 @@ impl Default for AppPreferences {
             theme: "system".to_string(),
             service_account_folder_path: None,
             max_concurrent_uploads: 3,
+            upload_chunk_size_mib: 8,
             destination_presets: Vec::new(),
         }
     }
@@ -358,6 +373,7 @@ async fn save_preferences(app: AppHandle, preferences: AppPreferences) -> Result
     // Validate theme value
     validate_theme(&preferences.theme)?;
     validate_max_concurrent_uploads(preferences.max_concurrent_uploads)?;
+    validate_upload_chunk_size_mib(preferences.upload_chunk_size_mib)?;
     validate_service_account_json_path(&preferences.service_account_folder_path)?;
     validate_destination_presets(&preferences.destination_presets)?;
 

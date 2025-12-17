@@ -76,6 +76,12 @@ const GeneralPaneForm: React.FC<{
   const [lastSavedMaxConcurrent, setLastSavedMaxConcurrent] = useState(
     () => preferences.maxConcurrentUploads ?? 3
   )
+  const [chunkSizeInput, setChunkSizeInput] = useState<string>(() =>
+    String(preferences.uploadChunkSizeMiB ?? 8)
+  )
+  const [lastSavedChunkSize, setLastSavedChunkSize] = useState(
+    () => preferences.uploadChunkSizeMiB ?? 8
+  )
 
   const [destinationPresetsDraft, setDestinationPresetsDraft] = useState<
     DestinationPreset[]
@@ -126,6 +132,30 @@ const GeneralPaneForm: React.FC<{
       })
       .catch(() => {
         setMaxConcurrentInput(String(lastSavedMaxConcurrent))
+      })
+  }
+
+  const chunkSizeError = useMemo(() => {
+    const trimmed = chunkSizeInput.trim()
+    if (!trimmed) return 'Please enter a number between 1 and 64.'
+    if (!/^\d+$/.test(trimmed)) return 'Must be an integer between 1 and 64.'
+    const parsed = Number.parseInt(trimmed, 10)
+    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 64) {
+      return 'Must be an integer between 1 and 64.'
+    }
+    return null
+  }, [chunkSizeInput])
+
+  const handleSaveChunkSize = () => {
+    if (chunkSizeError) return
+    const value = Number.parseInt(chunkSizeInput.trim(), 10)
+    savePreferences
+      .mutateAsync({ uploadChunkSizeMiB: value })
+      .then(() => {
+        setLastSavedChunkSize(value)
+      })
+      .catch(() => {
+        setChunkSizeInput(String(lastSavedChunkSize))
       })
   }
 
@@ -230,6 +260,24 @@ const GeneralPaneForm: React.FC<{
             />
             {maxConcurrentError ? (
               <p className="text-sm text-destructive">{maxConcurrentError}</p>
+            ) : null}
+          </div>
+        </SettingsField>
+
+        <SettingsField
+          label="Upload chunk size (MiB)"
+          description="Size of each chunk sent during resumable uploads. Larger values can improve throughput on fast networks but increase memory usage."
+        >
+          <div className="space-y-2">
+            <Input
+              inputMode="numeric"
+              value={chunkSizeInput}
+              onChange={e => setChunkSizeInput(e.target.value)}
+              onBlur={handleSaveChunkSize}
+              aria-invalid={Boolean(chunkSizeError)}
+            />
+            {chunkSizeError ? (
+              <p className="text-sm text-destructive">{chunkSizeError}</p>
             ) : null}
           </div>
         </SettingsField>

@@ -89,6 +89,7 @@ pub async fn run_upload_job_with_pool(
     pool: DrivePool,
     control: UploadControlHandle,
     max_concurrent: u8,
+    chunk_size_bytes: usize,
     queue: Vec<QueueItemInput>,
     destination_folder_id: String,
 ) -> Result<(), String> {
@@ -133,6 +134,7 @@ pub async fn run_upload_job_with_pool(
                     &task,
                     per_item_totals.clone(),
                     per_item_sent.clone(),
+                    chunk_size_bytes,
                 )
                 .await;
                 if let Err(e) = &result {
@@ -295,6 +297,7 @@ async fn upload_one_file(
     task: &UploadTask,
     per_item_totals: Arc<Mutex<HashMap<String, u64>>>,
     per_item_sent: Arc<Mutex<HashMap<String, u64>>>,
+    chunk_size_bytes: usize,
 ) -> Result<(), String> {
     if control.is_canceled() {
         return Err("Upload canceled".to_string());
@@ -314,7 +317,12 @@ async fn upload_one_file(
 
     let mut buf = Vec::new();
     let mut offset: u64 = 0;
-    let chunk_size: usize = 8 * 1024 * 1024;
+    let align = 256 * 1024;
+    let raw = chunk_size_bytes.clamp(align, 64 * 1024 * 1024);
+    let mut chunk_size = raw - (raw % align);
+    if chunk_size == 0 {
+        chunk_size = align;
+    }
 
     loop {
         if control.is_canceled() {
