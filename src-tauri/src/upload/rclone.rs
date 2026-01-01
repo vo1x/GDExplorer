@@ -505,11 +505,23 @@ async fn monitor_pause_state(
                 item.id,
                 is_paused
             );
-            let _ = if is_paused {
-                signal_process(pid, libc::SIGSTOP)
-            } else {
-                signal_process(pid, libc::SIGCONT)
-            };
+            #[cfg(unix)]
+            {
+                let _ = if is_paused {
+                    signal_process(pid, libc::SIGSTOP)
+                } else {
+                    signal_process(pid, libc::SIGCONT)
+                };
+            }
+            #[cfg(windows)]
+            {
+                log::debug!(
+                    target: "rclone",
+                    "upload.pause skipped on Windows id={} paused={}",
+                    item.id,
+                    is_paused
+                );
+            }
             let _ = app.emit(
                 "upload:item_status",
                 ItemStatusEvent {
@@ -720,6 +732,7 @@ fn parse_size(value: &str, unit: &str) -> Option<u64> {
     Some((number * multiplier).round() as u64)
 }
 
+#[cfg(unix)]
 fn signal_process(pid: u32, signal: i32) -> Result<(), String> {
     let result = unsafe { libc::kill(pid as i32, signal) };
     if result == 0 {
