@@ -491,7 +491,18 @@ async fn monitor_pause_state(
 
         if control.is_canceled() {
             log::debug!(target: "rclone", "upload.cancel id={}", item.id);
-            let _ = signal_process(pid, libc::SIGTERM);
+            #[cfg(unix)]
+            {
+                let _ = signal_process(pid, libc::SIGTERM);
+            }
+            #[cfg(windows)]
+            {
+                log::debug!(
+                    target: "rclone",
+                    "upload.cancel skipped on Windows id={}",
+                    item.id
+                );
+            }
             break;
         }
 
