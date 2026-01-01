@@ -59,6 +59,7 @@ export function BrowseLocalFiles() {
     let unlistenProgress: (() => void) | null = null
     let unlistenCompleted: (() => void) | null = null
     let unlistenErrorBanner: (() => void) | null = null
+    let unlistenNotice: (() => void) | null = null
 
     const setup = async () => {
       unlistenStatus = await listen<{
@@ -101,6 +102,13 @@ export function BrowseLocalFiles() {
         setIsUploading(false)
         toast.error('Upload blocked', { description: event.payload.message })
       })
+
+      unlistenNotice = await listen<{ message: string }>(
+        'upload:notice',
+        event => {
+          toast.message('Upload notice', { description: event.payload.message })
+        }
+      )
     }
 
     setup().catch(error => {
@@ -114,6 +122,7 @@ export function BrowseLocalFiles() {
       if (unlistenProgress) unlistenProgress()
       if (unlistenCompleted) unlistenCompleted()
       if (unlistenErrorBanner) unlistenErrorBanner()
+      if (unlistenNotice) unlistenNotice()
     }
   }, [setItemProgress, setItemStatus])
 

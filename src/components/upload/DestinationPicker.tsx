@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -31,6 +31,14 @@ export function DestinationPicker() {
     const match = destinationPresets.find(p => p.url.trim() === url)
     return match ? match.id : 'custom'
   }, [destinationPresets, destinationUrl])
+
+  useEffect(() => {
+    if (!destinationPresets.length) return
+    if (destinationUrl.trim()) return
+    const firstPreset = destinationPresets[0]
+    if (!firstPreset) return
+    setDestinationUrl(firstPreset.url)
+  }, [destinationPresets, destinationUrl, setDestinationUrl])
 
   return (
     <section className="space-y-2">

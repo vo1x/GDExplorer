@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
+import { invoke } from '@tauri-apps/api/core'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Input } from '@/components/ui/input'
@@ -7,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { usePreferences, useSavePreferences } from '@/services/preferences'
 import type { DestinationPreset } from '@/types/preferences'
 import { extractDriveFolderId } from '@/lib/drive-url'
+import { toast } from 'sonner'
 
 const SettingsField: React.FC<{
   label: string
@@ -44,6 +46,11 @@ export const GeneralPane: React.FC = () => {
     return JSON.stringify({
       serviceAccountFolderPath: preferences.serviceAccountFolderPath ?? '',
       maxConcurrentUploads: preferences.maxConcurrentUploads ?? 3,
+      uploadChunkSizeMiB: preferences.uploadChunkSizeMiB ?? 128,
+      rclonePath: preferences.rclonePath ?? 'rclone',
+      rcloneRemoteName: preferences.rcloneRemoteName ?? 'gdrive',
+      rcloneTransfers: preferences.rcloneTransfers ?? 4,
+      rcloneCheckers: preferences.rcloneCheckers ?? 8,
       destinationPresets: preferences.destinationPresets ?? [],
     })
   }, [preferences])
@@ -77,11 +84,37 @@ const GeneralPaneForm: React.FC<{
     () => preferences.maxConcurrentUploads ?? 3
   )
   const [chunkSizeInput, setChunkSizeInput] = useState<string>(() =>
-    String(preferences.uploadChunkSizeMiB ?? 8)
+    String(preferences.uploadChunkSizeMiB ?? 128)
   )
   const [lastSavedChunkSize, setLastSavedChunkSize] = useState(
-    () => preferences.uploadChunkSizeMiB ?? 8
+    () => preferences.uploadChunkSizeMiB ?? 128
   )
+  const [rclonePathInput, setRclonePathInput] = useState<string>(
+    () => preferences.rclonePath ?? 'rclone'
+  )
+  const [lastSavedRclonePath, setLastSavedRclonePath] = useState(
+    () => preferences.rclonePath ?? 'rclone'
+  )
+  const [rcloneRemoteInput, setRcloneRemoteInput] = useState<string>(
+    () => preferences.rcloneRemoteName ?? 'gdrive'
+  )
+  const [lastSavedRcloneRemote, setLastSavedRcloneRemote] = useState(
+    () => preferences.rcloneRemoteName ?? 'gdrive'
+  )
+  const [rcloneTransfersInput, setRcloneTransfersInput] = useState<string>(() =>
+    String(preferences.rcloneTransfers ?? 4)
+  )
+  const [lastSavedRcloneTransfers, setLastSavedRcloneTransfers] = useState(
+    () => preferences.rcloneTransfers ?? 4
+  )
+  const [rcloneCheckersInput, setRcloneCheckersInput] = useState<string>(() =>
+    String(preferences.rcloneCheckers ?? 8)
+  )
+  const [lastSavedRcloneCheckers, setLastSavedRcloneCheckers] = useState(
+    () => preferences.rcloneCheckers ?? 8
+  )
+  const [isInstallingRclone, setIsInstallingRclone] = useState(false)
+  const [isConfiguringRclone, setIsConfiguringRclone] = useState(false)
 
   const [destinationPresetsDraft, setDestinationPresetsDraft] = useState<
     DestinationPreset[]
@@ -137,11 +170,11 @@ const GeneralPaneForm: React.FC<{
 
   const chunkSizeError = useMemo(() => {
     const trimmed = chunkSizeInput.trim()
-    if (!trimmed) return 'Please enter a number between 1 and 64.'
-    if (!/^\d+$/.test(trimmed)) return 'Must be an integer between 1 and 64.'
+    if (!trimmed) return 'Please enter a number between 1 and 128.'
+    if (!/^\d+$/.test(trimmed)) return 'Must be an integer between 1 and 128.'
     const parsed = Number.parseInt(trimmed, 10)
-    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 64) {
-      return 'Must be an integer between 1 and 64.'
+    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 128) {
+      return 'Must be an integer between 1 and 128.'
     }
     return null
   }, [chunkSizeInput])
@@ -157,6 +190,126 @@ const GeneralPaneForm: React.FC<{
       .catch(() => {
         setChunkSizeInput(String(lastSavedChunkSize))
       })
+  }
+
+  const rclonePathError = useMemo(() => {
+    const trimmed = rclonePathInput.trim()
+    if (!trimmed) return 'Please enter a path (or rclone).'
+    if (trimmed.length > 512) return 'Path is too long (max 512 characters).'
+    return null
+  }, [rclonePathInput])
+
+  const handleSaveRclonePath = () => {
+    if (rclonePathError) return
+    const value = rclonePathInput.trim()
+    savePreferences
+      .mutateAsync({ rclonePath: value })
+      .then(() => {
+        setLastSavedRclonePath(value)
+      })
+      .catch(() => {
+        setRclonePathInput(lastSavedRclonePath)
+      })
+  }
+
+  const rcloneRemoteError = useMemo(() => {
+    const trimmed = rcloneRemoteInput.trim()
+    if (!trimmed) return 'Please enter a remote name.'
+    if (trimmed.length > 64) return 'Remote name is too long (max 64 characters).'
+    return null
+  }, [rcloneRemoteInput])
+
+  const handleSaveRcloneRemote = () => {
+    if (rcloneRemoteError) return
+    const value = rcloneRemoteInput.trim()
+    savePreferences
+      .mutateAsync({ rcloneRemoteName: value })
+      .then(() => {
+        setLastSavedRcloneRemote(value)
+      })
+      .catch(() => {
+        setRcloneRemoteInput(lastSavedRcloneRemote)
+      })
+  }
+
+  const rcloneTransfersError = useMemo(() => {
+    const trimmed = rcloneTransfersInput.trim()
+    if (!trimmed) return 'Please enter a number between 1 and 64.'
+    if (!/^\d+$/.test(trimmed)) return 'Must be an integer between 1 and 64.'
+    const parsed = Number.parseInt(trimmed, 10)
+    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 64) {
+      return 'Must be an integer between 1 and 64.'
+    }
+    return null
+  }, [rcloneTransfersInput])
+
+  const handleSaveRcloneTransfers = () => {
+    if (rcloneTransfersError) return
+    const value = Number.parseInt(rcloneTransfersInput.trim(), 10)
+    savePreferences
+      .mutateAsync({ rcloneTransfers: value })
+      .then(() => {
+        setLastSavedRcloneTransfers(value)
+      })
+      .catch(() => {
+        setRcloneTransfersInput(String(lastSavedRcloneTransfers))
+      })
+  }
+
+  const rcloneCheckersError = useMemo(() => {
+    const trimmed = rcloneCheckersInput.trim()
+    if (!trimmed) return 'Please enter a number between 1 and 64.'
+    if (!/^\d+$/.test(trimmed)) return 'Must be an integer between 1 and 64.'
+    const parsed = Number.parseInt(trimmed, 10)
+    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 64) {
+      return 'Must be an integer between 1 and 64.'
+    }
+    return null
+  }, [rcloneCheckersInput])
+
+  const handleSaveRcloneCheckers = () => {
+    if (rcloneCheckersError) return
+    const value = Number.parseInt(rcloneCheckersInput.trim(), 10)
+    savePreferences
+      .mutateAsync({ rcloneCheckers: value })
+      .then(() => {
+        setLastSavedRcloneCheckers(value)
+      })
+      .catch(() => {
+        setRcloneCheckersInput(String(lastSavedRcloneCheckers))
+      })
+  }
+
+  const handleInstallRclone = async () => {
+    setIsInstallingRclone(true)
+    try {
+      const path = await invoke<string>('install_rclone_windows')
+      await savePreferences.mutateAsync({ rclonePath: path })
+      setRclonePathInput(path)
+      setLastSavedRclonePath(path)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error('Failed to install rclone', { description: message })
+    } finally {
+      setIsInstallingRclone(false)
+    }
+  }
+
+  const handleConfigureRclone = async () => {
+    setIsConfiguringRclone(true)
+    try {
+      await invoke('configure_rclone_remote', {
+        rclonePath: rclonePathInput.trim(),
+        remoteName: rcloneRemoteInput.trim(),
+        serviceAccountFolder: serviceAccountFolder,
+      })
+      toast.success('Rclone remote configured')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error('Failed to configure rclone', { description: message })
+    } finally {
+      setIsConfiguringRclone(false)
+    }
   }
 
   const presetErrors = useMemo(() => {
@@ -279,6 +432,101 @@ const GeneralPaneForm: React.FC<{
             {chunkSizeError ? (
               <p className="text-sm text-destructive">{chunkSizeError}</p>
             ) : null}
+          </div>
+        </SettingsField>
+
+        <SettingsField
+          label="Rclone path"
+          description="Binary name or full path used to execute rclone."
+        >
+          <div className="space-y-2">
+            <Input
+              value={rclonePathInput}
+              onChange={e => setRclonePathInput(e.target.value)}
+              onBlur={handleSaveRclonePath}
+              aria-invalid={Boolean(rclonePathError)}
+            />
+            {rclonePathError ? (
+              <p className="text-sm text-destructive">{rclonePathError}</p>
+            ) : null}
+          </div>
+        </SettingsField>
+
+        <SettingsField
+          label="Rclone remote name"
+          description="Remote configured in rclone (e.g. gdrive)."
+        >
+          <div className="space-y-2">
+            <Input
+              value={rcloneRemoteInput}
+              onChange={e => setRcloneRemoteInput(e.target.value)}
+              onBlur={handleSaveRcloneRemote}
+              aria-invalid={Boolean(rcloneRemoteError)}
+            />
+            {rcloneRemoteError ? (
+              <p className="text-sm text-destructive">{rcloneRemoteError}</p>
+            ) : null}
+          </div>
+        </SettingsField>
+
+        <SettingsField
+          label="Rclone transfers"
+          description="Controls --transfers (parallel file uploads within rclone)."
+        >
+          <div className="space-y-2">
+            <Input
+              inputMode="numeric"
+              value={rcloneTransfersInput}
+              onChange={e => setRcloneTransfersInput(e.target.value)}
+              onBlur={handleSaveRcloneTransfers}
+              aria-invalid={Boolean(rcloneTransfersError)}
+            />
+            {rcloneTransfersError ? (
+              <p className="text-sm text-destructive">{rcloneTransfersError}</p>
+            ) : null}
+          </div>
+        </SettingsField>
+
+        <SettingsField
+          label="Rclone checkers"
+          description="Controls --checkers (parallel directory/metadata checks)."
+        >
+          <div className="space-y-2">
+            <Input
+              inputMode="numeric"
+              value={rcloneCheckersInput}
+              onChange={e => setRcloneCheckersInput(e.target.value)}
+              onBlur={handleSaveRcloneCheckers}
+              aria-invalid={Boolean(rcloneCheckersError)}
+            />
+            {rcloneCheckersError ? (
+              <p className="text-sm text-destructive">{rcloneCheckersError}</p>
+            ) : null}
+          </div>
+        </SettingsField>
+
+        <SettingsField
+          label="Rclone setup (Windows)"
+          description="Install rclone and configure the remote automatically."
+        >
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              onClick={handleInstallRclone}
+              disabled={isInstallingRclone}
+            >
+              {isInstallingRclone ? 'Installing…' : 'Install rclone'}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleConfigureRclone}
+              disabled={
+                isConfiguringRclone || !serviceAccountFolder.trim().length
+              }
+            >
+              {isConfiguringRclone ? 'Configuring…' : 'Configure remote'}
+            </Button>
           </div>
         </SettingsField>
 

@@ -318,7 +318,7 @@ async fn upload_one_file(
     let mut buf = Vec::new();
     let mut offset: u64 = 0;
     let align = 256 * 1024;
-    let raw = chunk_size_bytes.clamp(align, 64 * 1024 * 1024);
+    let raw = chunk_size_bytes.clamp(align, 128 * 1024 * 1024);
     let mut chunk_size = raw - (raw % align);
     if chunk_size == 0 {
         chunk_size = align;
@@ -378,7 +378,7 @@ async fn upload_one_file(
     Ok(())
 }
 
-async fn wait_if_paused(control: &UploadControlHandle, item_id: &str) -> Result<(), String> {
+pub async fn wait_if_paused(control: &UploadControlHandle, item_id: &str) -> Result<(), String> {
     if control.is_canceled() {
         return Err("Upload canceled".to_string());
     }

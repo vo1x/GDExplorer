@@ -8,6 +8,7 @@ use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuild
 use tauri::{AppHandle, Emitter, Manager, State};
 
 mod upload;
+mod rclone_tools;
 #[derive(Default)]
 struct UploadControlState(tokio::sync::Mutex<Option<UploadControl>>);
 
@@ -101,8 +102,6 @@ async fn start_upload(
         .ok_or_else(|| "Service Account folder path is not set in Preferences.".to_string())?;
 
     let max_concurrent = preferences.max_concurrent_uploads;
-    let chunk_size_mib = preferences.upload_chunk_size_mib;
-    let chunk_size_bytes = (chunk_size_mib as usize).saturating_mul(1024 * 1024);
 
     let queue_items = args.queue_items;
     let destination_folder_id = args.destination_folder_id;
@@ -123,36 +122,22 @@ async fn start_upload(
         *guard = Some(control);
     }
 
-    // Build SA pool and run a preflight check in-command so we can return actionable errors to the UI.
-    let pool = upload::scheduler::build_drive_pool(&service_account_folder)?;
-    let preflight_client = pool.next_client();
-    if let Err(e) = upload::drive_ops::ensure_destination_folder_access(
-        &preflight_client,
-        &destination_folder_id,
-    )
-    .await
-    {
-        let msg = e;
-        if msg.starts_with("Service Accounts can only upload to Shared Drives.") {
-            return Err(msg);
-        }
-        if msg.starts_with("Service Account is not a member of the Shared Drive.") {
-            return Err(msg);
-        }
-        return Err(format!(
-            "Service account {} does not have access to destination folder. {msg}",
-            preflight_client.sa_email()
-        ));
-    }
-
     let app_for_task = app.clone();
     tokio::spawn(async move {
-        if let Err(e) = upload::scheduler::run_upload_job_with_pool(
+        let prefs = upload::rclone::RclonePreferences {
+            rclone_path: preferences.rclone_path,
+            remote_name: preferences.rclone_remote_name,
+            drive_chunk_size_mib: preferences.upload_chunk_size_mib,
+            transfers: preferences.rclone_transfers,
+            checkers: preferences.rclone_checkers,
+        };
+
+        if let Err(e) = upload::rclone::run_rclone_job(
             app_for_task,
-            pool,
             control_handle,
+            prefs,
             max_concurrent,
-            chunk_size_bytes,
+            service_account_folder,
             queue_items,
             destination_folder_id,
         )
@@ -246,10 +231,42 @@ fn validate_max_concurrent_uploads(value: u8) -> Result<(), String> {
 fn validate_upload_chunk_size_mib(value: u32) -> Result<(), String> {
     // MiB, must be a multiple of 1 MiB; Drive requires chunk sizes aligned to 256KiB,
     // and any whole MiB satisfies that.
+    if (1..=128).contains(&value) {
+        Ok(())
+    } else {
+        Err("Invalid upload chunk size: must be between 1 and 128 MiB".to_string())
+    }
+}
+
+fn validate_rclone_path(path: &str) -> Result<(), String> {
+    if path.trim().is_empty() {
+        return Err("Invalid rclone path: must not be empty".to_string());
+    }
+    validate_string_input(path, 512, "Rclone path")?;
+    Ok(())
+}
+
+fn validate_rclone_remote_name(name: &str) -> Result<(), String> {
+    if name.trim().is_empty() {
+        return Err("Invalid rclone remote name: must not be empty".to_string());
+    }
+    validate_string_input(name, 64, "Rclone remote name")?;
+    Ok(())
+}
+
+fn validate_rclone_transfers(value: u16) -> Result<(), String> {
     if (1..=64).contains(&value) {
         Ok(())
     } else {
-        Err("Invalid upload chunk size: must be between 1 and 64 MiB".to_string())
+        Err("Invalid rclone transfers: must be between 1 and 64".to_string())
+    }
+}
+
+fn validate_rclone_checkers(value: u16) -> Result<(), String> {
+    if (1..=64).contains(&value) {
+        Ok(())
+    } else {
+        Err("Invalid rclone checkers: must be between 1 and 64".to_string())
     }
 }
 
@@ -316,6 +333,14 @@ pub struct AppPreferences {
     pub service_account_folder_path: Option<String>,
     pub max_concurrent_uploads: u8,
     pub upload_chunk_size_mib: u32,
+    #[serde(default = "default_rclone_path")]
+    pub rclone_path: String,
+    #[serde(default = "default_rclone_remote_name")]
+    pub rclone_remote_name: String,
+    #[serde(default = "default_rclone_transfers")]
+    pub rclone_transfers: u16,
+    #[serde(default = "default_rclone_checkers")]
+    pub rclone_checkers: u16,
     pub destination_presets: Vec<DestinationPreset>,
 }
 
@@ -325,10 +350,30 @@ impl Default for AppPreferences {
             theme: "system".to_string(),
             service_account_folder_path: None,
             max_concurrent_uploads: 3,
-            upload_chunk_size_mib: 8,
+            upload_chunk_size_mib: 128,
+            rclone_path: "rclone".to_string(),
+            rclone_remote_name: "gdrive".to_string(),
+            rclone_transfers: 4,
+            rclone_checkers: 8,
             destination_presets: Vec::new(),
         }
     }
+}
+
+fn default_rclone_path() -> String {
+    "rclone".to_string()
+}
+
+fn default_rclone_remote_name() -> String {
+    "gdrive".to_string()
+}
+
+fn default_rclone_transfers() -> u16 {
+    4
+}
+
+fn default_rclone_checkers() -> u16 {
+    8
 }
 
 fn get_preferences_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -374,6 +419,10 @@ async fn save_preferences(app: AppHandle, preferences: AppPreferences) -> Result
     validate_theme(&preferences.theme)?;
     validate_max_concurrent_uploads(preferences.max_concurrent_uploads)?;
     validate_upload_chunk_size_mib(preferences.upload_chunk_size_mib)?;
+    validate_rclone_path(&preferences.rclone_path)?;
+    validate_rclone_remote_name(&preferences.rclone_remote_name)?;
+    validate_rclone_transfers(preferences.rclone_transfers)?;
+    validate_rclone_checkers(preferences.rclone_checkers)?;
     validate_service_account_json_path(&preferences.service_account_folder_path)?;
     validate_destination_presets(&preferences.destination_presets)?;
 
@@ -781,7 +830,9 @@ pub fn run() {
             start_upload,
             pause_upload,
             pause_items,
-            cancel_upload
+            cancel_upload,
+            rclone_tools::install_rclone_windows,
+            rclone_tools::configure_rclone_remote
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
