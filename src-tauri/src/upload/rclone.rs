@@ -12,6 +12,9 @@ use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::sync::{mpsc, watch, Mutex};
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 #[derive(Clone, Debug)]
 pub struct RclonePreferences {
     pub rclone_path: String,
@@ -346,6 +349,11 @@ async fn run_rclone_command(
         .args(&mut args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
 
     log::debug!(
         target: "rclone",

@@ -170,11 +170,11 @@ const GeneralPaneForm: React.FC<{
 
   const chunkSizeError = useMemo(() => {
     const trimmed = chunkSizeInput.trim()
-    if (!trimmed) return 'Please enter a number between 1 and 128.'
-    if (!/^\d+$/.test(trimmed)) return 'Must be an integer between 1 and 128.'
+    if (!trimmed) return 'Please enter a number between 1 and 1024.'
+    if (!/^\d+$/.test(trimmed)) return 'Must be an integer between 1 and 1024.'
     const parsed = Number.parseInt(trimmed, 10)
-    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 128) {
-      return 'Must be an integer between 1 and 128.'
+    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 1024) {
+      return 'Must be an integer between 1 and 1024.'
     }
     return null
   }, [chunkSizeInput])

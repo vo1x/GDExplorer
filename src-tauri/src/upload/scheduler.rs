@@ -318,7 +318,7 @@ async fn upload_one_file(
     let mut buf = Vec::new();
     let mut offset: u64 = 0;
     let align = 256 * 1024;
-    let raw = chunk_size_bytes.clamp(align, 128 * 1024 * 1024);
+    let raw = chunk_size_bytes.clamp(align, 1024 * 1024 * 1024);
     let mut chunk_size = raw - (raw % align);
     if chunk_size == 0 {
         chunk_size = align;

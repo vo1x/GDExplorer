@@ -231,10 +231,10 @@ fn validate_max_concurrent_uploads(value: u8) -> Result<(), String> {
 fn validate_upload_chunk_size_mib(value: u32) -> Result<(), String> {
     // MiB, must be a multiple of 1 MiB; Drive requires chunk sizes aligned to 256KiB,
     // and any whole MiB satisfies that.
-    if (1..=128).contains(&value) {
+    if (1..=1024).contains(&value) {
         Ok(())
     } else {
-        Err("Invalid upload chunk size: must be between 1 and 128 MiB".to_string())
+        Err("Invalid upload chunk size: must be between 1 and 1024 MiB".to_string())
     }
 }
 
