@@ -1,7 +1,11 @@
-use crate::upload::events::{CompletedEvent, ItemStatusEvent, ProgressEvent, Summary};
+use crate::upload::events::{
+    CompletedEvent, FileListEntry, FileListEvent, FileProgressEvent, ItemStatusEvent, ProgressEvent,
+    Summary,
+};
 use crate::upload::scheduler::{wait_if_paused, QueueItemInput, UploadControlHandle};
 use regex::Regex;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -11,6 +15,7 @@ use tauri::{AppHandle, Emitter};
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::sync::{mpsc, watch, Mutex};
+use walkdir::WalkDir;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -225,6 +230,16 @@ async fn run_rclone_for_item(
     destination_folder_id: &str,
     item: &QueueItemInput,
 ) -> Result<(), String> {
+    if let Some(file_list) = collect_file_list(item) {
+        let _ = app.emit(
+            "upload:file_list",
+            FileListEvent {
+                item_id: item.id.clone(),
+                files: file_list,
+            },
+        );
+    }
+
     let should_pause =
         *control.pause_rx.borrow() || control.paused_items_rx.borrow().contains(&item.id);
     let initial_status = if should_pause { "paused" } else { "uploading" };
@@ -396,12 +411,27 @@ async fn run_rclone_command(
     let progress_re = progress_regex();
     let mut last_bytes = 0_u64;
     let mut last_total = 0_u64;
+    let mut last_file_progress: HashMap<String, (u64, u64)> = HashMap::new();
     let mut saw_unknown_flag = false;
 
     while let Some(line) = line_rx.recv().await {
         log::debug!(target: "rclone", "{}", line);
         if line.contains("unknown flag: --drive-service-account-file-path") {
             saw_unknown_flag = true;
+        }
+        if let Some(entries) = parse_json_file_progress(&line) {
+            for (file_path, bytes, total) in entries {
+                let should_emit = match last_file_progress.get(&file_path) {
+                    Some((last_bytes, last_total)) => {
+                        *last_bytes != bytes || *last_total != total
+                    }
+                    None => true,
+                };
+                if should_emit {
+                    last_file_progress.insert(file_path.clone(), (bytes, total));
+                    emit_file_progress(app, item, &file_path, bytes, total).await;
+                }
+            }
         }
         if let Some((bytes, total)) = parse_json_progress(&line, &item.path)
             .or_else(|| parse_progress_line(&progress_re, &line))
@@ -475,6 +505,24 @@ async fn emit_progress(app: &AppHandle, item: &QueueItemInput, bytes: u64, total
         ProgressEvent {
             item_id: item.id.clone(),
             path: item.path.clone(),
+            bytes_sent: bytes,
+            total_bytes: total,
+        },
+    );
+}
+
+async fn emit_file_progress(
+    app: &AppHandle,
+    item: &QueueItemInput,
+    file_path: &str,
+    bytes: u64,
+    total: u64,
+) {
+    let _ = app.emit(
+        "upload:file_progress",
+        FileProgressEvent {
+            item_id: item.id.clone(),
+            file_path: file_path.to_string(),
             bytes_sent: bytes,
             total_bytes: total,
         },
@@ -731,6 +779,71 @@ fn parse_json_progress(line: &str, path: &str) -> Option<(u64, u64)> {
     let bytes = stats.get("bytes").and_then(|v| v.as_u64())?;
     let total = stats.get("totalBytes").and_then(|v| v.as_u64())?;
     Some((bytes, total))
+}
+
+fn parse_json_file_progress(line: &str) -> Option<Vec<(String, u64, u64)>> {
+    if !line.trim_start().starts_with('{') {
+        return None;
+    }
+    let value: Value = serde_json::from_str(line).ok()?;
+    let stats = value.get("stats")?;
+    let transferring = stats.get("transferring")?.as_array()?;
+    let mut entries = Vec::new();
+    for entry in transferring {
+        let name = entry
+            .get("name")
+            .and_then(|v| v.as_str())
+            .or_else(|| entry.get("path").and_then(|v| v.as_str()))
+            .or_else(|| entry.get("object").and_then(|v| v.as_str()));
+        let bytes = entry.get("bytes").and_then(|v| v.as_u64());
+        let total = entry.get("size").and_then(|v| v.as_u64());
+        if let (Some(name), Some(bytes), Some(total)) = (name, bytes, total) {
+            entries.push((name.to_string(), bytes, total));
+        }
+    }
+    if entries.is_empty() {
+        None
+    } else {
+        Some(entries)
+    }
+}
+
+fn collect_file_list(item: &QueueItemInput) -> Option<Vec<FileListEntry>> {
+    let path = PathBuf::from(&item.path);
+    let mut files = Vec::new();
+
+    if item.kind == "file" {
+        if let Ok(metadata) = std::fs::metadata(&path) {
+            files.push(FileListEntry {
+                file_path: path.to_string_lossy().to_string(),
+                total_bytes: metadata.len(),
+            });
+        }
+        return Some(files);
+    }
+
+    if item.kind != "folder" {
+        return None;
+    }
+
+    for entry in WalkDir::new(&path).into_iter().filter_map(Result::ok) {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let file_path = entry.path().to_path_buf();
+        if let Ok(metadata) = std::fs::metadata(&file_path) {
+            files.push(FileListEntry {
+                file_path: file_path.to_string_lossy().to_string(),
+                total_bytes: metadata.len(),
+            });
+        }
+    }
+
+    if files.is_empty() {
+        None
+    } else {
+        Some(files)
+    }
 }
 
 fn parse_size(value: &str, unit: &str) -> Option<u64> {

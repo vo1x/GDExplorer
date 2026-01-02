@@ -4,7 +4,7 @@ export interface AppPreferences {
   theme: string
   serviceAccountFolderPath: string | null
   maxConcurrentUploads: number
-  uploadChunkSizeMiB: number
+  uploadChunkSizeMib: number
   rclonePath: string
   rcloneRemoteName: string
   rcloneTransfers: number
@@ -22,7 +22,7 @@ export const defaultPreferences: AppPreferences = {
   theme: 'system',
   serviceAccountFolderPath: null,
   maxConcurrentUploads: 3,
-  uploadChunkSizeMiB: 128,
+  uploadChunkSizeMib: 128,
   rclonePath: 'rclone',
   rcloneRemoteName: 'gdrive',
   rcloneTransfers: 4,

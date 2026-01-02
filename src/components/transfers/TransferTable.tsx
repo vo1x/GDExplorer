@@ -1,4 +1,11 @@
-import { type MouseEvent, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  type MouseEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  Fragment,
+} from 'react'
 import { Button } from '@/components/ui/button'
 import { invoke } from '@tauri-apps/api/core'
 import {
@@ -21,7 +28,13 @@ import { useLocalUploadQueue } from '@/store/local-upload-queue-store'
 import { useTransferUiStore } from '@/store/transfer-ui-store'
 import { ProgressBar, type TransferState } from './ProgressBar'
 import { formatBytes, formatEta, formatSpeed } from './format'
-import { FileIcon, FolderIcon, AlertTriangleIcon } from 'lucide-react'
+import {
+  FileIcon,
+  FolderIcon,
+  AlertTriangleIcon,
+  ChevronRightIcon,
+  ChevronDownIcon,
+} from 'lucide-react'
 import {
   Tooltip,
   TooltipContent,
@@ -45,6 +58,7 @@ type UploadRuntimeStatus =
 interface TransferRowData {
   id: string
   name: string
+  path: string
   kind: 'file' | 'folder'
   status: UploadRuntimeStatus
   totalBytes: number | null
@@ -81,6 +95,11 @@ export function TransferTable({
 
   const paused = useTransferUiStore(s => s.pausedById)
   const metrics = useTransferUiStore(s => s.metricsById)
+  const fileProgressById = useTransferUiStore(s => s.fileProgressById)
+  const fileOrderById = useTransferUiStore(s => s.fileOrderById)
+  const fileMetricsById = useTransferUiStore(s => s.fileMetricsById)
+  const recordFileList = useTransferUiStore(s => s.recordFileList)
+  const listRequestRef = useRef<Record<string, boolean>>({})
 
   const rows = useMemo((): TransferRowData[] => {
     return items.map(item => {
@@ -150,6 +169,7 @@ export function TransferTable({
       return {
         id: item.id,
         name: getPathName(item.path),
+        path: item.path,
         kind: item.kind,
         status: runtime,
         totalBytes: item.totalBytes ?? null,
@@ -188,6 +208,7 @@ export function TransferTable({
 
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const lastIndexRef = useRef<number | null>(null)
+  const [expandedById, setExpandedById] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     const valid = new Set(items.map(i => i.id))
@@ -202,6 +223,21 @@ export function TransferTable({
     })
   }, [items])
 
+  useEffect(() => {
+    const valid = new Set(
+      items.filter(item => item.kind === 'folder').map(item => item.id)
+    )
+    setExpandedById(prev => {
+      let changed = false
+      const next: Record<string, boolean> = {}
+      for (const [id, v] of Object.entries(prev)) {
+        if (v && valid.has(id)) next[id] = v
+        else changed = true
+      }
+      return changed ? next : prev
+    })
+  }, [items])
+
   const table = useReactTable({
     data: rows,
     columns: [
@@ -210,8 +246,62 @@ export function TransferTable({
         accessorKey: 'name',
         cell: ({ row }) => {
           const item = row.original
+          const isExpanded = Boolean(expandedById[item.id])
           return (
             <div className="flex min-w-0 items-center gap-2">
+              {item.kind === 'folder' ? (
+                <button
+                  type="button"
+                  onClick={event => {
+                    event.stopPropagation()
+                    setRowSelection({ [item.id]: true })
+                    lastIndexRef.current = row.index
+                    if (!listRequestRef.current[item.id]) {
+                      listRequestRef.current[item.id] = true
+                      const shouldFetch =
+                        item.kind === 'folder' &&
+                        (fileOrderById[item.id]?.length ?? 0) === 0
+                      if (shouldFetch) {
+                        invoke<{ filePath: string; totalBytes: number }[]>(
+                          'list_item_files',
+                          { path: item.path, kind: 'folder' }
+                        )
+                          .then(files => {
+                            recordFileList(
+                              item.id,
+                              files.map(file => ({
+                                filePath: file.filePath,
+                                bytesSent: 0,
+                                totalBytes: file.totalBytes,
+                              }))
+                            )
+                          })
+                          .catch(() => {
+                            listRequestRef.current[item.id] = false
+                          })
+                      }
+                    }
+                    setExpandedById(prev => ({
+                      ...prev,
+                      [item.id]: !isExpanded,
+                    }))
+                  }}
+                  className="flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                  aria-label={
+                    isExpanded
+                      ? `Collapse ${item.name}`
+                      : `Expand ${item.name}`
+                  }
+                >
+                  {isExpanded ? (
+                    <ChevronDownIcon className="size-4" />
+                  ) : (
+                    <ChevronRightIcon className="size-4" />
+                  )}
+                </button>
+              ) : (
+                <span className="size-5" aria-hidden="true" />
+              )}
               {item.kind === 'folder' ? (
                 <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
               ) : (
@@ -464,26 +554,177 @@ export function TransferTable({
 
         {rows.length > 0 ? (
           <div role="rowgroup">
-            {table.getRowModel().rows.map(row => (
-              <div
-                key={row.id}
-                role="row"
-                onClick={e => handleRowClick(row.id, row.index, e)}
-                className={[
-                  'group grid cursor-default grid-cols-[minmax(220px,1.8fr)_minmax(180px,1.4fr)_110px_100px_110px_80px] items-center gap-3 px-3 py-2 text-sm',
-                  row.index % 2 === 0 ? 'bg-background' : 'bg-muted/10',
-                  row.getIsSelected()
-                    ? 'bg-primary/12 outline outline-1 outline-primary/40'
-                    : '',
-                ].join(' ')}
-              >
-                {row.getVisibleCells().map(cell => (
-                  <div key={cell.id} role="cell" className="min-w-0">
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+            {table.getRowModel().rows.map(row => {
+              const item = row.original
+              const isExpanded = Boolean(expandedById[item.id])
+              const fileOrder = fileOrderById[item.id] ?? []
+              const fileProgress = fileProgressById[item.id] ?? {}
+              const fileMetrics = fileMetricsById[item.id] ?? {}
+
+              return (
+                <Fragment key={row.id}>
+                  <div
+                    role="row"
+                    onClick={e => handleRowClick(row.id, row.index, e)}
+                    className={[
+                      'group grid cursor-default grid-cols-[minmax(220px,1.8fr)_minmax(180px,1.4fr)_110px_100px_110px_80px] items-center gap-3 px-3 py-2 text-sm',
+                      row.index % 2 === 0 ? 'bg-background' : 'bg-muted/10',
+                      row.getIsSelected()
+                        ? 'bg-primary/12 outline outline-1 outline-primary/40'
+                        : '',
+                    ].join(' ')}
+                  >
+                    {row.getVisibleCells().map(cell => (
+                      <div key={cell.id} role="cell" className="min-w-0">
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext()
+                        )}
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            ))}
+
+                  {item.kind === 'folder' && isExpanded ? (
+                    fileOrder.length > 0 ? (
+                      fileOrder.map((filePath, index) => {
+                        const progress = fileProgress[filePath]
+                        const total =
+                          typeof progress?.totalBytes === 'number'
+                            ? progress.totalBytes
+                            : 0
+                        const sent =
+                          typeof progress?.bytesSent === 'number'
+                            ? progress.bytesSent
+                            : 0
+                        const rawPct =
+                          total > 0 ? (Math.min(sent, total) / total) * 100 : 0
+                        const isCompleted = total > 0 && sent >= total
+                        const parentState = row.original.progressState
+                        const progressState: TransferState =
+                          parentState === 'failed'
+                            ? 'failed'
+                            : parentState === 'paused'
+                              ? 'paused'
+                              : isCompleted
+                                ? 'completed'
+                                : sent > 0
+                                  ? 'uploading'
+                                  : parentState === 'uploading'
+                                    ? 'uploading'
+                                    : 'queued'
+                        const statusLabel =
+                          progressState === 'failed'
+                            ? 'Failed'
+                            : progressState === 'paused'
+                              ? 'Paused'
+                              : progressState === 'completed'
+                                ? 'Completed'
+                                : progressState === 'uploading'
+                                  ? 'Uploading'
+                                  : 'Queued'
+                        const sizeLabel = total > 0 ? formatBytes(total) : '—'
+                        const speedValue =
+                          fileMetrics[filePath]?.speedBytesPerSec ?? 0
+                        const speedLabel =
+                          progressState === 'uploading'
+                            ? formatSpeed(speedValue)
+                            : progressState === 'paused'
+                              ? '0 B/s'
+                              : '—'
+                        const etaValue =
+                          fileMetrics[filePath]?.etaSeconds ?? null
+                        const etaLabel =
+                          progressState === 'uploading'
+                            ? formatEta(etaValue)
+                            : progressState === 'paused'
+                              ? '∞'
+                              : '—'
+
+                        return (
+                          <div
+                            key={`${item.id}:${filePath}`}
+                            role="row"
+                            onClick={event => {
+                              event.stopPropagation()
+                              setRowSelection({ [item.id]: true })
+                              lastIndexRef.current = row.index
+                            }}
+                            className={[
+                              'grid grid-cols-[minmax(220px,1.8fr)_minmax(180px,1.4fr)_110px_100px_110px_80px] items-center gap-3 px-3 py-2 text-xs',
+                              index % 2 === 0 ? 'bg-muted/5' : 'bg-muted/10',
+                            ].join(' ')}
+                          >
+                            <div role="cell" className="min-w-0">
+                              <div className="flex min-w-0 items-center gap-2 pl-7 text-muted-foreground">
+                                <FileIcon className="size-3.5 shrink-0" />
+                                <div className="truncate">
+                                  {getPathName(filePath)}
+                                </div>
+                              </div>
+                            </div>
+                            <div role="cell">
+                              <ProgressBar
+                                percent={rawPct}
+                                state={progressState}
+                              />
+                            </div>
+                            <div
+                              role="cell"
+                              className={[
+                                'text-xs',
+                                progressState === 'failed'
+                                  ? 'text-red-300'
+                                  : progressState === 'completed'
+                                    ? 'text-emerald-300'
+                                    : progressState === 'uploading'
+                                      ? 'text-sky-200'
+                                      : progressState === 'paused'
+                                        ? 'text-yellow-200'
+                                        : 'text-muted-foreground',
+                              ].join(' ')}
+                            >
+                              {statusLabel}
+                            </div>
+                            <div
+                              role="cell"
+                              className="text-xs tabular-nums text-muted-foreground"
+                            >
+                              {sizeLabel}
+                            </div>
+                            <div
+                              role="cell"
+                              className="text-xs tabular-nums text-muted-foreground"
+                            >
+                              {speedLabel}
+                            </div>
+                            <div
+                              role="cell"
+                              className="text-xs tabular-nums text-muted-foreground"
+                            >
+                              {etaLabel}
+                            </div>
+                          </div>
+                        )
+                      })
+                    ) : (
+                      <div
+                        role="row"
+                        className="grid grid-cols-[minmax(220px,1.8fr)_minmax(180px,1.4fr)_110px_100px_110px_80px] items-center gap-3 px-3 py-2 text-xs text-muted-foreground"
+                      >
+                        <div role="cell" className="min-w-0">
+                          <div className="pl-7">Waiting for file progress…</div>
+                        </div>
+                        <div role="cell" />
+                        <div role="cell" />
+                        <div role="cell" />
+                        <div role="cell" />
+                        <div role="cell" />
+                      </div>
+                    )
+                  ) : null}
+                </Fragment>
+              )
+            })}
           </div>
         ) : (
           <div className="flex h-[260px] flex-col items-center justify-center gap-3 p-6 text-center">

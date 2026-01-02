@@ -1,5 +1,8 @@
 use crate::upload::drive_client::DriveClient;
-use crate::upload::events::{CompletedEvent, ItemStatusEvent, ProgressEvent, Summary};
+use crate::upload::events::{
+    CompletedEvent, FileListEntry, FileListEvent, FileProgressEvent, ItemStatusEvent, ProgressEvent,
+    Summary,
+};
 use crate::upload::mirror::{build_tasks_for_item, read_file_chunk, FolderAggregate, UploadTask};
 use crate::upload::sa_loader::load_service_accounts;
 use reqwest::Client;
@@ -183,6 +186,23 @@ pub async fn run_upload_job_with_pool(
         )
         .await
         .map_err(|e| format!("Failed to prepare {}: {e}", item.path))?;
+
+        let file_list: Vec<FileListEntry> = tasks
+            .iter()
+            .map(|task| FileListEntry {
+                file_path: task.local_file_path.to_string_lossy().to_string(),
+                total_bytes: task.total_bytes,
+            })
+            .collect();
+        if !file_list.is_empty() {
+            let _ = app.emit(
+                "upload:file_list",
+                FileListEvent {
+                    item_id: item.id.clone(),
+                    files: file_list,
+                },
+            );
+        }
 
         if let Some(agg) = aggregate {
             folder_aggregates.insert(item.id.clone(), agg);
@@ -371,6 +391,16 @@ async fn upload_one_file(
                 path: task.top_item_path.clone(),
                 bytes_sent: sent.min(total),
                 total_bytes: total,
+            },
+        );
+
+        let _ = app.emit(
+            "upload:file_progress",
+            FileProgressEvent {
+                item_id: task.top_item_id.clone(),
+                file_path: task.local_file_path.to_string_lossy().to_string(),
+                bytes_sent: offset.min(task.total_bytes),
+                total_bytes: task.total_bytes,
             },
         );
     }

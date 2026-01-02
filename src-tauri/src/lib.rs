@@ -80,11 +80,25 @@ struct ClassifiedPath {
     kind: LocalPathKind,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FileListEntry {
+    file_path: String,
+    total_bytes: u64,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct StartUploadArgs {
     queue_items: Vec<upload::scheduler::QueueItemInput>,
     destination_folder_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PauseItemsArgs {
+    item_ids: Vec<String>,
+    paused: bool,
 }
 
 #[tauri::command]
@@ -163,14 +177,13 @@ async fn pause_upload(state: State<'_, UploadControlState>, paused: bool) -> Res
 #[tauri::command]
 async fn pause_items(
     state: State<'_, UploadControlState>,
-    item_ids: Vec<String>,
-    paused: bool,
+    args: PauseItemsArgs,
 ) -> Result<(), String> {
     let guard = state.0.lock().await;
     let Some(control) = guard.as_ref() else {
         return Ok(());
     };
-    control.set_items_paused(&item_ids, paused);
+    control.set_items_paused(&args.item_ids, args.paused);
     Ok(())
 }
 
@@ -181,6 +194,40 @@ async fn cancel_upload(state: State<'_, UploadControlState>) -> Result<(), Strin
         control.cancel();
     }
     Ok(())
+}
+
+#[tauri::command]
+async fn list_item_files(path: String, kind: LocalPathKind) -> Result<Vec<FileListEntry>, String> {
+    let mut files = Vec::new();
+    let path_buf = PathBuf::from(&path);
+
+    match kind {
+        LocalPathKind::File => {
+            let metadata = std::fs::metadata(&path_buf)
+                .map_err(|e| format!("Failed to stat file: {e}"))?;
+            files.push(FileListEntry {
+                file_path: path_buf.to_string_lossy().to_string(),
+                total_bytes: metadata.len(),
+            });
+        }
+        LocalPathKind::Folder => {
+            for entry in walkdir::WalkDir::new(&path_buf).into_iter().filter_map(Result::ok) {
+                if !entry.file_type().is_file() {
+                    continue;
+                }
+                let file_path = entry.path().to_path_buf();
+                let metadata = std::fs::metadata(&file_path)
+                    .map_err(|e| format!("Failed to stat file: {e}"))?;
+                files.push(FileListEntry {
+                    file_path: file_path.to_string_lossy().to_string(),
+                    total_bytes: metadata.len(),
+                });
+            }
+        }
+    }
+
+    files.sort_by(|a, b| a.file_path.cmp(&b.file_path));
+    Ok(files)
 }
 // Validation functions
 fn validate_filename(filename: &str) -> Result<(), String> {
@@ -831,6 +878,7 @@ pub fn run() {
             pause_upload,
             pause_items,
             cancel_upload,
+            list_item_files,
             rclone_tools::install_rclone_windows,
             rclone_tools::configure_rclone_remote
         ])

@@ -22,6 +22,29 @@ pub struct ProgressEvent {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct FileProgressEvent {
+    pub item_id: String,
+    pub file_path: String,
+    pub bytes_sent: u64,
+    pub total_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileListEntry {
+    pub file_path: String,
+    pub total_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileListEvent {
+    pub item_id: String,
+    pub files: Vec<FileListEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CompletedEvent {
     pub summary: Summary,
 }

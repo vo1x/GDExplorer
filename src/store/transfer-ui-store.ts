@@ -13,9 +13,27 @@ export interface TransferMetrics {
   etaSeconds: number | null
 }
 
+export interface FileProgress {
+  bytesSent: number
+  totalBytes: number
+}
+
+export interface FileProgressByPath extends FileProgress {
+  filePath: string
+}
+
+export interface FileMetrics {
+  speedBytesPerSec: number
+  etaSeconds: number | null
+}
+
 interface TransferUiState {
   pausedById: Record<string, boolean>
   metricsById: Record<string, TransferMetrics>
+  fileProgressById: Record<string, Record<string, FileProgress>>
+  fileOrderById: Record<string, string[]>
+  fileMetricsById: Record<string, Record<string, FileMetrics>>
+  _fileLastSampleById: Record<string, Record<string, { bytesSent: number; atMs: number }>>
   _lastSampleById: Record<string, { bytesSent: number; atMs: number }>
   _startedAtById: Record<string, number>
 
@@ -23,6 +41,14 @@ interface TransferUiState {
   setPaused: (id: string, paused: boolean) => void
   pauseAll: (ids: string[]) => void
   resumeAll: (ids: string[]) => void
+  recordFileProgress: (
+    itemId: string,
+    filePath: string,
+    bytesSent: number,
+    totalBytes: number
+  ) => void
+  recordFileList: (itemId: string, files: FileProgressByPath[]) => void
+  clearFileProgress: (itemIds: string[]) => void
   clearRemoved: (remainingIds: string[]) => void
 
   tick: (
@@ -38,6 +64,10 @@ interface TransferUiState {
 export const useTransferUiStore = create<TransferUiState>((set, get) => ({
   pausedById: {},
   metricsById: {},
+  fileProgressById: {},
+  fileOrderById: {},
+  fileMetricsById: {},
+  _fileLastSampleById: {},
   _lastSampleById: {},
   _startedAtById: {},
 
@@ -68,11 +98,187 @@ export const useTransferUiStore = create<TransferUiState>((set, get) => ({
       return { pausedById: next }
     }),
 
+  recordFileProgress: (itemId, filePath, bytesSent, totalBytes) =>
+    set(state => {
+      const trimmed = filePath.trim()
+      if (!trimmed) return state
+
+      const existingByItem = state.fileProgressById[itemId]
+      const existingOrder = state.fileOrderById[itemId]
+      const existingMetrics = state.fileMetricsById[itemId]
+      const existingSamples = state._fileLastSampleById[itemId]
+      const resolvedKey =
+        existingOrder && existingByItem
+          ? resolveFileKey(existingOrder, trimmed)
+          : trimmed
+      const isNewFile =
+        !existingByItem || !(resolvedKey in existingByItem)
+
+      const nextByItem = existingByItem
+        ? { ...existingByItem }
+        : ({} as Record<string, FileProgress>)
+      nextByItem[resolvedKey] = {
+        bytesSent,
+        totalBytes,
+      }
+
+      const nextOrder = isNewFile
+        ? [...(existingOrder ?? []), resolvedKey]
+        : existingOrder ?? []
+
+      const now = Date.now()
+      const prevSample = existingSamples?.[resolvedKey]
+      const atMs = prevSample?.atMs ?? now
+      const dtMs = Math.max(250, now - atMs)
+      const prevSent = prevSample?.bytesSent ?? bytesSent
+      const delta = Math.max(0, bytesSent - prevSent)
+      const prevSpeed = existingMetrics?.[resolvedKey]?.speedBytesPerSec ?? 0
+      const speed =
+        delta > 0
+          ? Math.max(0, Math.round((delta * 1000) / dtMs))
+          : prevSpeed
+      const remaining = Math.max(0, totalBytes - Math.min(bytesSent, totalBytes))
+      const etaSeconds = speed > 0 ? Math.round(remaining / speed) : null
+
+      const nextSamples = {
+        ...(existingSamples ?? {}),
+        [resolvedKey]: { bytesSent, atMs: delta > 0 ? now : atMs },
+      }
+
+      const nextMetrics = {
+        ...(existingMetrics ?? {}),
+        [resolvedKey]: { speedBytesPerSec: speed, etaSeconds },
+      }
+
+      return {
+        fileProgressById: {
+          ...state.fileProgressById,
+          [itemId]: nextByItem,
+        },
+        fileOrderById: {
+          ...state.fileOrderById,
+          [itemId]: nextOrder,
+        },
+        fileMetricsById: {
+          ...state.fileMetricsById,
+          [itemId]: nextMetrics,
+        },
+        _fileLastSampleById: {
+          ...state._fileLastSampleById,
+          [itemId]: nextSamples,
+        },
+      }
+    }),
+
+  recordFileList: (itemId, files) =>
+    set(state => {
+      if (!files.length) return state
+
+      const existingOrder = state.fileOrderById[itemId] ?? []
+      const existingByItem = state.fileProgressById[itemId] ?? {}
+      const nextByItem: Record<string, FileProgress> = {
+        ...existingByItem,
+      }
+      const nextOrder = [...existingOrder]
+      for (const entry of files) {
+        const trimmed = entry.filePath.trim()
+        if (!trimmed) continue
+        if (trimmed in nextByItem) {
+          continue
+        }
+        const resolved = resolveFileKey(existingOrder, trimmed)
+        if (resolved in nextByItem) {
+          continue
+        }
+        nextByItem[trimmed] = {
+          bytesSent: entry.bytesSent,
+          totalBytes: entry.totalBytes,
+        }
+        nextOrder.push(trimmed)
+      }
+
+      if (nextOrder.length === 0) return state
+
+      const nextMetrics: Record<string, FileMetrics> = {}
+      const nextSamples: Record<string, { bytesSent: number; atMs: number }> =
+        {}
+      const now = Date.now()
+      for (const filePath of nextOrder) {
+        nextMetrics[filePath] = { speedBytesPerSec: 0, etaSeconds: null }
+        nextSamples[filePath] = { bytesSent: 0, atMs: now }
+      }
+
+      return {
+        fileProgressById: {
+          ...state.fileProgressById,
+          [itemId]: nextByItem,
+        },
+        fileOrderById: {
+          ...state.fileOrderById,
+          [itemId]: nextOrder,
+        },
+        fileMetricsById: {
+          ...state.fileMetricsById,
+          [itemId]: {
+            ...(state.fileMetricsById[itemId] ?? {}),
+            ...nextMetrics,
+          },
+        },
+        _fileLastSampleById: {
+          ...state._fileLastSampleById,
+          [itemId]: {
+            ...(state._fileLastSampleById[itemId] ?? {}),
+            ...nextSamples,
+          },
+        },
+      }
+    }),
+
+  clearFileProgress: itemIds =>
+    set(state => {
+      if (itemIds.length === 0) return state
+      const ids = new Set(itemIds)
+      const nextById: Record<string, Record<string, FileProgress>> = {}
+      const nextOrderById: Record<string, string[]> = {}
+      const nextMetricsById: Record<string, Record<string, FileMetrics>> = {}
+      const nextSamplesById: Record<
+        string,
+        Record<string, { bytesSent: number; atMs: number }>
+      > = {}
+
+      for (const [id, value] of Object.entries(state.fileProgressById)) {
+        if (!ids.has(id)) nextById[id] = value
+      }
+      for (const [id, value] of Object.entries(state.fileOrderById)) {
+        if (!ids.has(id)) nextOrderById[id] = value
+      }
+      for (const [id, value] of Object.entries(state.fileMetricsById)) {
+        if (!ids.has(id)) nextMetricsById[id] = value
+      }
+      for (const [id, value] of Object.entries(state._fileLastSampleById)) {
+        if (!ids.has(id)) nextSamplesById[id] = value
+      }
+
+      return {
+        fileProgressById: nextById,
+        fileOrderById: nextOrderById,
+        fileMetricsById: nextMetricsById,
+        _fileLastSampleById: nextSamplesById,
+      }
+    }),
+
   clearRemoved: remainingIds =>
     set(state => {
       const remaining = new Set(remainingIds)
       const nextPaused: Record<string, boolean> = {}
       const nextMetrics: Record<string, TransferMetrics> = {}
+      const nextFileProgress: Record<string, Record<string, FileProgress>> = {}
+      const nextFileOrder: Record<string, string[]> = {}
+      const nextFileMetrics: Record<string, Record<string, FileMetrics>> = {}
+      const nextFileSamples: Record<
+        string,
+        Record<string, { bytesSent: number; atMs: number }>
+      > = {}
       const nextLast: Record<string, { bytesSent: number; atMs: number }> = {}
       const nextStarted: Record<string, number> = {}
 
@@ -81,6 +287,18 @@ export const useTransferUiStore = create<TransferUiState>((set, get) => ({
       }
       for (const [id, v] of Object.entries(state.metricsById)) {
         if (remaining.has(id)) nextMetrics[id] = v
+      }
+      for (const [id, v] of Object.entries(state.fileProgressById)) {
+        if (remaining.has(id)) nextFileProgress[id] = v
+      }
+      for (const [id, v] of Object.entries(state.fileOrderById)) {
+        if (remaining.has(id)) nextFileOrder[id] = v
+      }
+      for (const [id, v] of Object.entries(state.fileMetricsById)) {
+        if (remaining.has(id)) nextFileMetrics[id] = v
+      }
+      for (const [id, v] of Object.entries(state._fileLastSampleById)) {
+        if (remaining.has(id)) nextFileSamples[id] = v
       }
       for (const [id, v] of Object.entries(state._lastSampleById)) {
         if (remaining.has(id)) nextLast[id] = v
@@ -92,6 +310,10 @@ export const useTransferUiStore = create<TransferUiState>((set, get) => ({
       return {
         pausedById: nextPaused,
         metricsById: nextMetrics,
+        fileProgressById: nextFileProgress,
+        fileOrderById: nextFileOrder,
+        fileMetricsById: nextFileMetrics,
+        _fileLastSampleById: nextFileSamples,
         _lastSampleById: nextLast,
         _startedAtById: nextStarted,
       }
@@ -202,4 +424,23 @@ function omitKey<T extends Record<string, unknown>>(obj: T, key: string): T {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { [key]: _removed, ...rest } = obj as any
   return rest as T
+}
+
+function resolveFileKey(existingOrder: string[], candidate: string): string {
+  if (existingOrder.includes(candidate)) return candidate
+  const base = getPathName(candidate)
+  let match: string | null = null
+  for (const entry of existingOrder) {
+    if (getPathName(entry) === base) {
+      if (match) return candidate
+      match = entry
+    }
+  }
+  return match ?? candidate
+}
+
+function getPathName(path: string): string {
+  const normalized = path.replace(/[/\\]+$/g, '')
+  const parts = normalized.split(/[/\\]/)
+  return parts[parts.length - 1] || normalized
 }

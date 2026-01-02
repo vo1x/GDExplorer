@@ -46,7 +46,7 @@ export const GeneralPane: React.FC = () => {
     return JSON.stringify({
       serviceAccountFolderPath: preferences.serviceAccountFolderPath ?? '',
       maxConcurrentUploads: preferences.maxConcurrentUploads ?? 3,
-      uploadChunkSizeMiB: preferences.uploadChunkSizeMiB ?? 128,
+      uploadChunkSizeMib: preferences.uploadChunkSizeMib ?? 128,
       rclonePath: preferences.rclonePath ?? 'rclone',
       rcloneRemoteName: preferences.rcloneRemoteName ?? 'gdrive',
       rcloneTransfers: preferences.rcloneTransfers ?? 4,
@@ -84,10 +84,10 @@ const GeneralPaneForm: React.FC<{
     () => preferences.maxConcurrentUploads ?? 3
   )
   const [chunkSizeInput, setChunkSizeInput] = useState<string>(() =>
-    String(preferences.uploadChunkSizeMiB ?? 128)
+    String(preferences.uploadChunkSizeMib ?? 128)
   )
   const [lastSavedChunkSize, setLastSavedChunkSize] = useState(
-    () => preferences.uploadChunkSizeMiB ?? 128
+    () => preferences.uploadChunkSizeMib ?? 128
   )
   const [rclonePathInput, setRclonePathInput] = useState<string>(
     () => preferences.rclonePath ?? 'rclone'
@@ -183,7 +183,7 @@ const GeneralPaneForm: React.FC<{
     if (chunkSizeError) return
     const value = Number.parseInt(chunkSizeInput.trim(), 10)
     savePreferences
-      .mutateAsync({ uploadChunkSizeMiB: value })
+      .mutateAsync({ uploadChunkSizeMib: value })
       .then(() => {
         setLastSavedChunkSize(value)
       })

@@ -5,6 +5,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { listen } from '@tauri-apps/api/event'
 import { useLocalUploadQueue } from '@/store/local-upload-queue-store'
 import { useUploadDestinationStore } from '@/store/upload-destination-store'
+import { useTransferUiStore } from '@/store/transfer-ui-store'
 import { TransferTable } from '@/components/transfers/TransferTable'
 import { toast } from 'sonner'
 import { logger } from '@/lib/logger'
@@ -25,6 +26,9 @@ export function BrowseLocalFiles() {
     setItemStatus,
     resetItemsUploadState,
   } = useLocalUploadQueue()
+  const recordFileProgress = useTransferUiStore(s => s.recordFileProgress)
+  const recordFileList = useTransferUiStore(s => s.recordFileList)
+  const clearFileProgress = useTransferUiStore(s => s.clearFileProgress)
   const { destinationError, destinationFolderId } = useUploadDestinationStore()
   const [isBrowsing, setIsBrowsing] = useState(false)
   const [isDropActive, setIsDropActive] = useState(false)
@@ -57,6 +61,8 @@ export function BrowseLocalFiles() {
   useEffect(() => {
     let unlistenStatus: (() => void) | null = null
     let unlistenProgress: (() => void) | null = null
+    let unlistenFileProgress: (() => void) | null = null
+    let unlistenFileList: (() => void) | null = null
     let unlistenCompleted: (() => void) | null = null
     let unlistenErrorBanner: (() => void) | null = null
     let unlistenNotice: (() => void) | null = null
@@ -82,6 +88,31 @@ export function BrowseLocalFiles() {
       }>('upload:progress', event => {
         const { itemId, bytesSent, totalBytes } = event.payload
         setItemProgress(itemId, bytesSent, totalBytes)
+      })
+
+      unlistenFileProgress = await listen<{
+        itemId: string
+        filePath: string
+        bytesSent: number
+        totalBytes: number
+      }>('upload:file_progress', event => {
+        const { itemId, filePath, bytesSent, totalBytes } = event.payload
+        recordFileProgress(itemId, filePath, bytesSent, totalBytes)
+      })
+
+      unlistenFileList = await listen<{
+        itemId: string
+        files: { filePath: string; totalBytes: number }[]
+      }>('upload:file_list', event => {
+        const { itemId, files } = event.payload
+        recordFileList(
+          itemId,
+          files.map(file => ({
+            filePath: file.filePath,
+            bytesSent: 0,
+            totalBytes: file.totalBytes,
+          }))
+        )
       })
 
       unlistenCompleted = await listen<{
@@ -120,11 +151,13 @@ export function BrowseLocalFiles() {
     return () => {
       if (unlistenStatus) unlistenStatus()
       if (unlistenProgress) unlistenProgress()
+      if (unlistenFileProgress) unlistenFileProgress()
+      if (unlistenFileList) unlistenFileList()
       if (unlistenCompleted) unlistenCompleted()
       if (unlistenErrorBanner) unlistenErrorBanner()
       if (unlistenNotice) unlistenNotice()
     }
-  }, [setItemProgress, setItemStatus])
+  }, [recordFileList, recordFileProgress, setItemProgress, setItemStatus])
 
   useEffect(() => {
     let unlisten: (() => void) | null = null
@@ -246,6 +279,7 @@ export function BrowseLocalFiles() {
 
     setIsUploading(true)
 
+    clearFileProgress(startable.map(i => i.id))
     resetItemsUploadState(startable.map(i => i.id))
     for (const it of startable) {
       setItemStatus(it.id, 'preparing', null, null)
