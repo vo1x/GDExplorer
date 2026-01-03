@@ -257,12 +257,7 @@ async fn run_rclone_command(
         },
     );
 
-    let args = build_rclone_args(
-        prefs,
-        destination_folder_id,
-        item,
-        service_account_folder,
-    );
+    let args = build_rclone_args(prefs, destination_folder_id, item, service_account_folder);
 
     let mut command = Command::new(&prefs.rclone_path);
     command
