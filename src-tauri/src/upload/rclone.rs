@@ -511,7 +511,7 @@ fn build_rclone_args(
     item: &QueueItemInput,
     service_account_folder: &str,
 ) -> Vec<String> {
-    let mut args = vec![
+    let args = vec![
         "copy".to_string(),
         item.path.clone(),
         format!(
