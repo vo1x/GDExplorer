@@ -247,7 +247,7 @@ async fn run_rclone_command(
     app: &AppHandle,
     control: &UploadControlHandle,
     prefs: &RclonePreferences,
-    sa_path: &PathBuf,
+    sa_path: &Path,
     sa_email: Option<String>,
     destination_folder_id: &str,
     item: &QueueItemInput,
@@ -526,7 +526,7 @@ fn build_rclone_args(
     prefs: &RclonePreferences,
     destination_folder_id: &str,
     item: &QueueItemInput,
-    sa_path: &PathBuf,
+    sa_path: &Path,
 ) -> Vec<String> {
     let args = vec![
         "copy".to_string(),
