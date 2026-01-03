@@ -611,7 +611,9 @@ const GeneralPaneForm: React.FC<{
                       variant="secondary"
                       onClick={() =>
                         persistDestinationPresets(
-                          destinationPresetsDraft.filter(p => p.id !== preset.id)
+                          destinationPresetsDraft.filter(
+                            p => p.id !== preset.id
+                          )
                         )
                       }
                     >
@@ -626,7 +628,6 @@ const GeneralPaneForm: React.FC<{
                 ))
               )}
             </div>
-
           </div>
         </SettingsField>
       </SettingsSection>
