@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button'
 import { usePreferences, useSavePreferences } from '@/services/preferences'
 import type { DestinationPreset } from '@/types/preferences'
 import { extractDriveFolderId } from '@/lib/drive-url'
-import { toast } from 'sonner'
 
 const SettingsField: React.FC<{
   label: string
@@ -631,6 +630,7 @@ const GeneralPaneForm: React.FC<{
           </div>
         </SettingsField>
       </SettingsSection>
+
     </div>
   )
 }

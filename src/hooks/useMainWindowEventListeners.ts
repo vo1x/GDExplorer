@@ -1,9 +1,8 @@
 import { useEffect } from 'react'
 import { listen } from '@tauri-apps/api/event'
-import { check } from '@tauri-apps/plugin-updater'
 import { useUIStore } from '@/store/ui-store'
 import { logger } from '@/lib/logger'
-import { toast } from 'sonner'
+import { checkForUpdates } from '@/lib/updater'
 
 function isTextInputTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false
@@ -75,17 +74,11 @@ export function useMainWindowEventListeners() {
 
         listen('menu-check-updates', async () => {
           logger.debug('Check for updates menu event received')
-          try {
-            const update = await check()
-            if (update) {
-              toast(`Update available: ${update.version}`)
-            } else {
-              toast.success('You are running the latest version')
-            }
-          } catch (error) {
-            logger.error('Update check failed:', { error: String(error) })
-            toast.error('Failed to check for updates')
-          }
+          await checkForUpdates({
+            notifyIfLatest: true,
+            notifyOnError: true,
+            notifyOnReady: true,
+          })
         }),
 
         listen('menu-preferences', () => {

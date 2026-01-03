@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Settings, Palette } from 'lucide-react'
+import { Info, Palette, Settings } from 'lucide-react'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -27,8 +27,9 @@ import {
 import { useUIStore } from '@/store/ui-store'
 import { GeneralPane } from './panes/GeneralPane'
 import { AppearancePane } from './panes/AppearancePane'
+import { AboutPane } from './panes/AboutPane'
 
-type PreferencePane = 'general' | 'appearance'
+type PreferencePane = 'general' | 'appearance' | 'about'
 
 const navigationItems = [
   {
@@ -41,6 +42,11 @@ const navigationItems = [
     name: 'Appearance',
     icon: Palette,
   },
+  {
+    id: 'about' as const,
+    name: 'About',
+    icon: Info,
+  },
 ]
 
 const getPaneTitle = (pane: PreferencePane): string => {
@@ -49,6 +55,8 @@ const getPaneTitle = (pane: PreferencePane): string => {
       return 'General'
     case 'appearance':
       return 'Appearance'
+    case 'about':
+      return 'About'
     default:
       return 'General'
   }
@@ -116,6 +124,7 @@ export function PreferencesDialog() {
             <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4 pt-0 max-h-[calc(600px-4rem)]">
               {activePane === 'general' && <GeneralPane />}
               {activePane === 'appearance' && <AppearancePane />}
+              {activePane === 'about' && <AboutPane />}
             </div>
           </main>
         </SidebarProvider>

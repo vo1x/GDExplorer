@@ -4,11 +4,16 @@ import { devtools } from 'zustand/middleware'
 interface UIState {
   leftSidebarVisible: boolean
   preferencesOpen: boolean
+  updateDownloading: boolean
+  updateReady: boolean
+  updateVersion: string | null
 
   toggleLeftSidebar: () => void
   setLeftSidebarVisible: (visible: boolean) => void
   togglePreferences: () => void
   setPreferencesOpen: (open: boolean) => void
+  setUpdateDownloading: (downloading: boolean, version?: string | null) => void
+  setUpdateReady: (ready: boolean, version?: string | null) => void
 }
 
 export const useUIStore = create<UIState>()(
@@ -16,6 +21,9 @@ export const useUIStore = create<UIState>()(
     set => ({
       leftSidebarVisible: true,
       preferencesOpen: false,
+      updateDownloading: false,
+      updateReady: false,
+      updateVersion: null,
 
       toggleLeftSidebar: () =>
         set(
@@ -40,6 +48,27 @@ export const useUIStore = create<UIState>()(
 
       setPreferencesOpen: open =>
         set({ preferencesOpen: open }, undefined, 'setPreferencesOpen'),
+
+      setUpdateDownloading: (downloading, version = null) =>
+        set(
+          {
+            updateDownloading: downloading,
+            updateVersion: downloading ? version : null,
+          },
+          undefined,
+          'setUpdateDownloading'
+        ),
+
+      setUpdateReady: (ready, version = null) =>
+        set(
+          {
+            updateReady: ready,
+            updateVersion: ready ? version : null,
+            updateDownloading: false,
+          },
+          undefined,
+          'setUpdateReady'
+        ),
     }),
     {
       name: 'ui-store',

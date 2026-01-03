@@ -8,7 +8,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
@@ -29,6 +29,13 @@ pub struct RclonePreferences {
     pub checkers: u16,
 }
 
+#[derive(Clone, Debug)]
+struct ServiceAccountFile {
+    path: PathBuf,
+    email: Option<String>,
+    last_used: u64,
+}
+
 pub async fn run_rclone_job(
     app: AppHandle,
     control: UploadControlHandle,
@@ -44,12 +51,15 @@ pub async fn run_rclone_job(
         queue.len(),
         max_concurrent
     );
-    let sa_files = count_service_account_files(&service_account_folder)?;
-    if sa_files == 0 {
+    let sa_files = load_service_account_files(&service_account_folder)?;
+    if sa_files.is_empty() {
         return Err(
             "No valid service account JSON files found in the selected folder.".to_string(),
         );
     }
+
+    let sa_pool = Arc::new(Mutex::new(sa_files));
+    let sa_tick = Arc::new(AtomicU64::new(0));
 
     let concurrency = max_concurrent.clamp(1, 10) as usize;
     let (tx, rx) = mpsc::channel::<QueueItemInput>(concurrency.saturating_mul(2).max(8));
@@ -86,9 +96,10 @@ pub async fn run_rclone_job(
         let rx = rx.clone();
         let prefs = prefs.clone();
         let destination_folder_id = destination_folder_id.clone();
+        let sa_pool = sa_pool.clone();
+        let sa_tick = sa_tick.clone();
         let succeeded = succeeded.clone();
         let failed = failed.clone();
-        let service_account_folder = service_account_folder.clone();
 
         worker_handles.push(tokio::spawn(async move {
             loop {
@@ -105,7 +116,8 @@ pub async fn run_rclone_job(
                     &app,
                     &control,
                     &prefs,
-                    &service_account_folder,
+                    &sa_pool,
+                    &sa_tick,
                     &destination_folder_id,
                     &item,
                 )
@@ -176,7 +188,8 @@ async fn run_rclone_for_item(
     app: &AppHandle,
     control: &UploadControlHandle,
     prefs: &RclonePreferences,
-    service_account_folder: &str,
+    sa_pool: &Arc<Mutex<Vec<ServiceAccountFile>>>,
+    sa_tick: &Arc<AtomicU64>,
     destination_folder_id: &str,
     item: &QueueItemInput,
 ) -> Result<(), String> {
@@ -215,11 +228,14 @@ async fn run_rclone_for_item(
 
     wait_if_paused(control, &item.id).await?;
 
+    let (sa_path, sa_email) = select_service_account(sa_pool, sa_tick).await?;
+
     run_rclone_command(
         app,
         control,
         prefs,
-        service_account_folder,
+        &sa_path,
+        sa_email,
         destination_folder_id,
         item,
     )
@@ -231,7 +247,8 @@ async fn run_rclone_command(
     app: &AppHandle,
     control: &UploadControlHandle,
     prefs: &RclonePreferences,
-    service_account_folder: &str,
+    sa_path: &PathBuf,
+    sa_email: Option<String>,
     destination_folder_id: &str,
     item: &QueueItemInput,
 ) -> Result<(), String> {
@@ -243,7 +260,7 @@ async fn run_rclone_command(
         target: "rclone",
         "upload.sa id={} sa={}",
         item.id,
-        service_account_folder
+        sa_path.to_string_lossy()
     );
     let _ = app.emit(
         "upload:item_status",
@@ -253,11 +270,11 @@ async fn run_rclone_command(
             kind: item.kind.clone(),
             status: "uploading".to_string(),
             message: None,
-            sa_email: None,
+            sa_email: sa_email.clone(),
         },
     );
 
-    let args = build_rclone_args(prefs, destination_folder_id, item, service_account_folder);
+    let args = build_rclone_args(prefs, destination_folder_id, item, sa_path);
 
     let mut command = Command::new(&prefs.rclone_path);
     command
@@ -367,7 +384,7 @@ async fn run_rclone_command(
                 kind: item.kind.clone(),
                 status: "done".to_string(),
                 message: None,
-                sa_email: None,
+                sa_email,
             },
         );
         return Ok(());
@@ -509,7 +526,7 @@ fn build_rclone_args(
     prefs: &RclonePreferences,
     destination_folder_id: &str,
     item: &QueueItemInput,
-    service_account_folder: &str,
+    sa_path: &PathBuf,
 ) -> Vec<String> {
     let args = vec![
         "copy".to_string(),
@@ -542,18 +559,18 @@ fn build_rclone_args(
         "--log-level".to_string(),
         "INFO".to_string(),
         "--use-json-log".to_string(),
-        "--drive-service-account-file-path".to_string(),
-        service_account_folder.to_string(),
+        "--drive-service-account-file".to_string(),
+        sa_path.to_string_lossy().to_string(),
     ];
 
     args
 }
 
-fn count_service_account_files(folder: &str) -> Result<usize, String> {
+fn load_service_account_files(folder: &str) -> Result<Vec<ServiceAccountFile>, String> {
     let entries = std::fs::read_dir(folder)
         .map_err(|e| format!("Failed to read service account folder: {e}"))?;
 
-    let mut count = 0;
+    let mut accounts = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|e| format!("Failed to read folder entry: {e}"))?;
         let path = entry.path();
@@ -568,10 +585,58 @@ fn count_service_account_files(folder: &str) -> Result<usize, String> {
         if !is_json {
             continue;
         }
-        count += 1;
+
+        let email = match read_service_account_email(&path) {
+            Ok(email) => email,
+            Err(_) => continue,
+        };
+        accounts.push(ServiceAccountFile {
+            path,
+            email,
+            last_used: 0,
+        });
     }
 
-    Ok(count)
+    Ok(accounts)
+}
+
+fn read_service_account_email(path: &Path) -> Result<Option<String>, String> {
+    #[derive(serde::Deserialize)]
+    struct ServiceAccountJson {
+        client_email: Option<String>,
+    }
+
+    let contents = std::fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read service account JSON: {e}"))?;
+    let parsed: ServiceAccountJson = serde_json::from_str(&contents)
+        .map_err(|e| format!("Invalid service account JSON: {e}"))?;
+
+    Ok(parsed.client_email)
+}
+
+async fn select_service_account(
+    pool: &Arc<Mutex<Vec<ServiceAccountFile>>>,
+    tick: &Arc<AtomicU64>,
+) -> Result<(PathBuf, Option<String>), String> {
+    let mut guard = pool.lock().await;
+    if guard.is_empty() {
+        return Err("No service account JSON files available.".to_string());
+    }
+
+    let mut best_idx = 0;
+    let mut best_used = guard[0].last_used;
+    for (idx, entry) in guard.iter().enumerate().skip(1) {
+        if entry.last_used < best_used {
+            best_idx = idx;
+            best_used = entry.last_used;
+        }
+    }
+
+    let next = tick.fetch_add(1, Ordering::Relaxed) + 1;
+    guard[best_idx].last_used = next;
+
+    let entry = &guard[best_idx];
+    Ok((entry.path.clone(), entry.email.clone()))
 }
 
 fn progress_regex() -> Regex {

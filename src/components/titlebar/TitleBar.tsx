@@ -2,7 +2,8 @@ import { cn } from '@/lib/utils'
 import { MacOSWindowControls } from './MacOSWindowControls'
 import { Button } from '@/components/ui/button'
 import { useUIStore } from '@/store/ui-store'
-import { PanelLeft, PanelLeftClose, Settings } from 'lucide-react'
+import { relaunch } from '@tauri-apps/plugin-process'
+import { Download, PanelLeft, PanelLeftClose, Settings } from 'lucide-react'
 
 interface TitleBarProps {
   className?: string
@@ -10,8 +11,14 @@ interface TitleBarProps {
 }
 
 export function TitleBar({ className, title = 'GDExplorer' }: TitleBarProps) {
-  const { leftSidebarVisible, toggleLeftSidebar, setPreferencesOpen } =
-    useUIStore()
+  const {
+    leftSidebarVisible,
+    toggleLeftSidebar,
+    setPreferencesOpen,
+    updateReady,
+    updateVersion,
+    setUpdateReady,
+  } = useUIStore()
   return (
     <div
       data-tauri-drag-region
@@ -51,6 +58,24 @@ export function TitleBar({ className, title = 'GDExplorer' }: TitleBarProps) {
 
       {/* Right side - Right Actions */}
       <div className="flex items-center gap-1 pr-2">
+        {updateReady ? (
+          <Button
+            onClick={async () => {
+              setUpdateReady(false)
+              await relaunch()
+            }}
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 text-foreground/80 hover:text-foreground"
+            title={
+              updateVersion
+                ? `Restart to update (${updateVersion})`
+                : 'Restart to update'
+            }
+          >
+            <Download className="h-3 w-3" />
+          </Button>
+        ) : null}
         <Button
           onClick={() => setPreferencesOpen(true)}
           variant="ghost"
