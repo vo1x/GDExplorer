@@ -2,6 +2,7 @@
   "name": "gdexplorer",
   "private": true,
   "version": "0.2.0",
+  "packageManager": "pnpm@10.25.0",
   "type": "module",
   "author": "Danny Smith",
   "copyright": "Copyright © 2025 Danny Smith. All rights reserved.",
