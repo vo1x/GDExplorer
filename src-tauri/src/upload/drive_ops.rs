@@ -1,6 +1,7 @@
 use crate::upload::drive_client::{DriveClient, DriveFile};
 use bytes::Bytes;
 
+#[allow(dead_code)]
 pub async fn ensure_destination_folder_access(
     client: &DriveClient,
     destination_folder_id: &str,
@@ -62,6 +63,7 @@ pub async fn ensure_destination_folder_access(
     Ok(())
 }
 
+#[allow(dead_code)]
 pub async fn create_unique_folder(
     client: &DriveClient,
     parent_id: &str,
@@ -91,6 +93,7 @@ pub async fn create_unique_folder(
     client.create_folder(parent_id, &candidate).await
 }
 
+#[allow(dead_code)]
 fn chrono_like_timestamp() -> String {
     // Avoid pulling in chrono; stable enough for preflight naming.
     let now = std::time::SystemTime::now()
@@ -100,6 +103,7 @@ fn chrono_like_timestamp() -> String {
     now.to_string()
 }
 
+#[allow(dead_code)]
 fn map_service_account_quota_error(error: String) -> String {
     if !is_service_account_quota_error(&error) {
         return error;
@@ -110,12 +114,14 @@ fn map_service_account_quota_error(error: String) -> String {
     )
 }
 
+#[allow(dead_code)]
 fn is_service_account_quota_error(error: &str) -> bool {
     error.contains("storageQuotaExceeded")
         || error.contains("Service Accounts do not have storage quota")
         || error.contains("\"reason\": \"storageQuotaExceeded\"")
 }
 
+#[allow(dead_code)]
 fn map_preflight_error(error: String) -> String {
     if is_shared_drive_membership_error(&error) {
         return format!(
@@ -125,6 +131,7 @@ fn map_preflight_error(error: String) -> String {
     map_service_account_quota_error(error)
 }
 
+#[allow(dead_code)]
 fn is_shared_drive_membership_error(error: &str) -> bool {
     error.contains("teamDriveMembershipRequired")
         || error.contains("sharedDriveMembershipRequired")

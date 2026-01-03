@@ -9,12 +9,17 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 
+#[allow(dead_code)]
 const DRIVE_SCOPE: &str = "https://www.googleapis.com/auth/drive";
+#[allow(dead_code)]
 const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
+#[allow(dead_code)]
 const DRIVE_API_BASE: &str = "https://www.googleapis.com/drive/v3";
+#[allow(dead_code)]
 const DRIVE_UPLOAD_BASE: &str = "https://www.googleapis.com/upload/drive/v3";
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct DriveClient {
     http: reqwest::Client,
     account: ServiceAccount,
@@ -22,12 +27,14 @@ pub struct DriveClient {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct CachedToken {
     access_token: String,
     expires_at: u64,
 }
 
 #[derive(Debug, Serialize)]
+#[allow(dead_code)]
 struct JwtClaims<'a> {
     iss: &'a str,
     scope: &'a str,
@@ -37,12 +44,14 @@ struct JwtClaims<'a> {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct TokenResponse {
     access_token: String,
     expires_in: u64,
 }
 
 impl DriveClient {
+    #[allow(dead_code)]
     pub fn new(http: reqwest::Client, account: ServiceAccount) -> Self {
         Self {
             http,
@@ -51,10 +60,12 @@ impl DriveClient {
         }
     }
 
+    #[allow(dead_code)]
     pub fn sa_email(&self) -> &str {
         &self.account.client_email
     }
 
+    #[allow(dead_code)]
     async fn get_access_token(&self) -> Result<String, String> {
         let now = now_epoch_seconds();
         {
@@ -119,6 +130,7 @@ impl DriveClient {
         Ok(token_resp.access_token)
     }
 
+    #[allow(dead_code)]
     pub async fn authorized_headers(&self) -> Result<HeaderMap, String> {
         let token = self.get_access_token().await?;
         let mut headers = HeaderMap::new();
@@ -128,6 +140,7 @@ impl DriveClient {
         Ok(headers)
     }
 
+    #[allow(dead_code)]
     pub async fn get_file_metadata(&self, file_id: &str) -> Result<DriveFile, String> {
         let headers = self.authorized_headers().await?;
         log::debug!(
@@ -164,6 +177,7 @@ impl DriveClient {
             .map_err(|e| format!("Failed to parse Drive response: {e}"))
     }
 
+    #[allow(dead_code)]
     pub async fn delete_file(&self, file_id: &str) -> Result<(), String> {
         let headers = self.authorized_headers().await?;
         log::debug!(
@@ -196,6 +210,7 @@ impl DriveClient {
         Err(format!("Drive files.delete failed ({status}): {text}"))
     }
 
+    #[allow(dead_code)]
     pub async fn list_child_folders(&self, parent_id: &str) -> Result<Vec<DriveFile>, String> {
         let headers = self.authorized_headers().await?;
         log::debug!(
@@ -241,6 +256,7 @@ impl DriveClient {
         Ok(list.files.unwrap_or_default())
     }
 
+    #[allow(dead_code)]
     pub async fn create_folder(&self, parent_id: &str, name: &str) -> Result<DriveFile, String> {
         let headers = self.authorized_headers().await?;
         log::debug!(
@@ -285,6 +301,7 @@ impl DriveClient {
             .map_err(|e| format!("Failed to parse Drive create folder response: {e}"))
     }
 
+    #[allow(dead_code)]
     pub async fn start_resumable_upload(
         &self,
         parent_id: &str,
@@ -371,6 +388,7 @@ impl DriveClient {
         Ok(location.to_string())
     }
 
+    #[allow(dead_code)]
     pub async fn upload_resumable_chunk(
         &self,
         upload_url: &str,
@@ -435,6 +453,7 @@ impl DriveClient {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct DriveFile {
     pub id: String,
     pub name: Option<String>,
@@ -445,10 +464,12 @@ pub struct DriveFile {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 struct FilesListResponse {
     files: Option<Vec<DriveFile>>,
 }
 
+#[allow(dead_code)]
 fn now_epoch_seconds() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

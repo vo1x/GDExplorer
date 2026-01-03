@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct UploadTask {
     pub top_item_id: String,
     pub top_item_path: String,
@@ -18,10 +19,12 @@ pub struct UploadTask {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct FolderAggregate {
     pub total_bytes: u64,
 }
 
+#[allow(dead_code)]
 pub async fn build_tasks_for_item(
     pool: &DrivePool,
     destination_folder_id: &str,
@@ -124,6 +127,7 @@ pub async fn build_tasks_for_item(
     Ok((tasks, Some(FolderAggregate { total_bytes })))
 }
 
+#[allow(dead_code)]
 pub async fn read_file_chunk(
     file: &mut tokio::fs::File,
     buf: &mut Vec<u8>,
@@ -140,6 +144,7 @@ pub async fn read_file_chunk(
     Ok(Bytes::copy_from_slice(&buf[..]))
 }
 
+#[allow(dead_code)]
 fn guess_mime(path: &Path) -> String {
     // Conservative default.
     let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");

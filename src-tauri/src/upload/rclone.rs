@@ -222,7 +222,7 @@ pub async fn run_rclone_job(
     Ok(())
 }
 
-async fn run_rclone_for_item(
+#[allow(clippy::too_many_arguments)]#[allow(clippy::too_many_arguments)]async fn run_rclone_for_item(
     app: &AppHandle,
     control: &UploadControlHandle,
     prefs: &RclonePreferences,

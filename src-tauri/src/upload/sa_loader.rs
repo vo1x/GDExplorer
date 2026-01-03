@@ -2,17 +2,20 @@ use serde::Deserialize;
 use std::path::Path;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ServiceAccount {
     pub client_email: String,
     pub private_key: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct ServiceAccountJson {
     client_email: Option<String>,
     private_key: Option<String>,
 }
 
+#[allow(dead_code)]
 pub fn load_service_accounts(folder: &Path) -> Result<Vec<ServiceAccount>, String> {
     let entries = std::fs::read_dir(folder)
         .map_err(|e| format!("Failed to read service account folder: {e}"))?;

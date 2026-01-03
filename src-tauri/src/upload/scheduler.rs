@@ -27,6 +27,7 @@ impl UploadControlHandle {
     }
 }
 
+#[allow(dead_code)]
 pub fn build_drive_pool(service_account_folder: &str) -> Result<DrivePool, String> {
     let folder = PathBuf::from(service_account_folder);
     let accounts = load_service_accounts(&folder)?;
@@ -49,12 +50,14 @@ pub fn build_drive_pool(service_account_folder: &str) -> Result<DrivePool, Strin
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct DrivePool {
     clients: Arc<Vec<DriveClient>>,
     next_index: Arc<AtomicUsize>,
 }
 
 impl DrivePool {
+    #[allow(dead_code)]
     pub fn new(clients: Vec<DriveClient>) -> Result<Self, String> {
         if clients.is_empty() {
             return Err("No service accounts available".to_string());
@@ -65,12 +68,14 @@ impl DrivePool {
         })
     }
 
+    #[allow(dead_code)]
     pub fn next_client(&self) -> DriveClient {
         let idx = self.next_index.fetch_add(1, Ordering::Relaxed);
         let i = idx % self.clients.len();
         self.clients[i].clone()
     }
 
+    #[allow(dead_code)]
     pub fn first_email(&self) -> String {
         self.clients
             .first()
@@ -87,6 +92,7 @@ pub struct QueueItemInput {
     pub kind: String,
 }
 
+#[allow(dead_code)]
 pub async fn run_upload_job_with_pool(
     app: AppHandle,
     pool: DrivePool,
@@ -310,6 +316,7 @@ pub async fn run_upload_job_with_pool(
     Ok(())
 }
 
+#[allow(dead_code)]
 async fn upload_one_file(
     client: &DriveClient,
     control: &UploadControlHandle,
