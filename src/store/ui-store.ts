@@ -7,6 +7,7 @@ interface UIState {
   updateDownloading: boolean
   updateReady: boolean
   updateVersion: string | null
+  updateProgress: number | null
 
   toggleLeftSidebar: () => void
   setLeftSidebarVisible: (visible: boolean) => void
@@ -14,6 +15,7 @@ interface UIState {
   setPreferencesOpen: (open: boolean) => void
   setUpdateDownloading: (downloading: boolean, version?: string | null) => void
   setUpdateReady: (ready: boolean, version?: string | null) => void
+  setUpdateProgress: (progress: number | null) => void
 }
 
 export const useUIStore = create<UIState>()(
@@ -24,6 +26,7 @@ export const useUIStore = create<UIState>()(
       updateDownloading: false,
       updateReady: false,
       updateVersion: null,
+      updateProgress: null,
 
       toggleLeftSidebar: () =>
         set(
@@ -54,6 +57,7 @@ export const useUIStore = create<UIState>()(
           {
             updateDownloading: downloading,
             updateVersion: downloading ? version : null,
+            updateProgress: downloading ? null : null,
           },
           undefined,
           'setUpdateDownloading'
@@ -65,10 +69,14 @@ export const useUIStore = create<UIState>()(
             updateReady: ready,
             updateVersion: ready ? version : null,
             updateDownloading: false,
+            updateProgress: null,
           },
           undefined,
           'setUpdateReady'
         ),
+
+      setUpdateProgress: progress =>
+        set({ updateProgress: progress }, undefined, 'setUpdateProgress'),
     }),
     {
       name: 'ui-store',

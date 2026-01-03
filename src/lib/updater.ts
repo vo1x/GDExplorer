@@ -37,6 +37,7 @@ export async function checkForUpdates(options: CheckOptions = {}) {
       updateReady,
       setUpdateDownloading,
       setUpdateReady,
+      setUpdateProgress,
     } = useUIStore.getState()
     if (updateReady || updateDownloading) {
       if (notifyOnReady && updateReady) {
@@ -46,18 +47,33 @@ export async function checkForUpdates(options: CheckOptions = {}) {
     }
 
     setUpdateDownloading(true, update.version)
+    setUpdateProgress(null)
     logger.info(`Update available: ${update.version}`)
+
+    let totalBytes: number | null = null
+    let downloadedBytes = 0
 
     await update.download(event => {
       switch (event.event) {
         case 'Started':
+          totalBytes = event.data.contentLength ?? null
           logger.info(`Downloading ${event.data.contentLength} bytes`)
           break
         case 'Progress':
+          downloadedBytes += event.data.chunkLength
+          if (totalBytes && totalBytes > 0) {
+            const pct = Math.min(
+              100,
+              Math.max(0, Math.round((downloadedBytes / totalBytes) * 100))
+            )
+            setUpdateProgress(pct)
+          }
           logger.info(`Downloaded: ${event.data.chunkLength} bytes`)
           break
         case 'Finished':
           logger.info('Download complete')
+          setUpdateProgress(100)
+          toast('Update downloaded. Restart to install.')
           break
       }
     })
@@ -70,6 +86,7 @@ export async function checkForUpdates(options: CheckOptions = {}) {
   } catch (error) {
     logger.error('Update check failed:', { error: String(error) })
     useUIStore.getState().setUpdateDownloading(false)
+    useUIStore.getState().setUpdateProgress(null)
     pendingUpdate = null
     if (notifyOnError) {
       toast.error('Failed to check for updates')

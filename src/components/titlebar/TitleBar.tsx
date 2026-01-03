@@ -3,7 +3,7 @@ import { MacOSWindowControls } from './MacOSWindowControls'
 import { WindowsWindowControls } from './WindowsWindowControls'
 import { Button } from '@/components/ui/button'
 import { useUIStore } from '@/store/ui-store'
-import { Download, PanelLeft, PanelLeftClose, Settings } from 'lucide-react'
+import { Download, Loader2, PanelLeft, PanelLeftClose, Settings } from 'lucide-react'
 import { installUpdate } from '@/lib/updater'
 
 interface TitleBarProps {
@@ -17,7 +17,9 @@ export function TitleBar({ className, title = 'GDExplorer' }: TitleBarProps) {
     toggleLeftSidebar,
     setPreferencesOpen,
     updateReady,
+    updateDownloading,
     updateVersion,
+    updateProgress,
   } = useUIStore()
 
   const platformName = detectPlatform()
@@ -61,6 +63,19 @@ export function TitleBar({ className, title = 'GDExplorer' }: TitleBarProps) {
 
       {/* Right side - Right Actions */}
       <div className="flex items-center gap-1 pr-2">
+        {updateDownloading ? (
+          <div
+            className="flex items-center gap-1 text-foreground/70 text-xs"
+            title={
+              updateProgress !== null
+                ? `Downloading update (${updateProgress}%)`
+                : 'Downloading update'
+            }
+          >
+            <Loader2 className="h-3 w-3 animate-spin" />
+            {updateProgress !== null ? `${updateProgress}%` : 'Downloading…'}
+          </div>
+        ) : null}
         {updateReady ? (
           <Button
             onClick={async () => {
