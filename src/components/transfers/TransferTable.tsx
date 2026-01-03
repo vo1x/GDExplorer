@@ -288,9 +288,7 @@ export function TransferTable({
                   }}
                   className="flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground"
                   aria-label={
-                    isExpanded
-                      ? `Collapse ${item.name}`
-                      : `Expand ${item.name}`
+                    isExpanded ? `Collapse ${item.name}` : `Expand ${item.name}`
                   }
                 >
                   {isExpanded ? (

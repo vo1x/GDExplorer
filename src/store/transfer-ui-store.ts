@@ -33,7 +33,10 @@ interface TransferUiState {
   fileProgressById: Record<string, Record<string, FileProgress>>
   fileOrderById: Record<string, string[]>
   fileMetricsById: Record<string, Record<string, FileMetrics>>
-  _fileLastSampleById: Record<string, Record<string, { bytesSent: number; atMs: number }>>
+  _fileLastSampleById: Record<
+    string,
+    Record<string, { bytesSent: number; atMs: number }>
+  >
   _lastSampleById: Record<string, { bytesSent: number; atMs: number }>
   _startedAtById: Record<string, number>
 
@@ -111,8 +114,7 @@ export const useTransferUiStore = create<TransferUiState>((set, get) => ({
         existingOrder && existingByItem
           ? resolveFileKey(existingOrder, trimmed)
           : trimmed
-      const isNewFile =
-        !existingByItem || !(resolvedKey in existingByItem)
+      const isNewFile = !existingByItem || !(resolvedKey in existingByItem)
 
       const nextByItem = existingByItem
         ? { ...existingByItem }
@@ -124,7 +126,7 @@ export const useTransferUiStore = create<TransferUiState>((set, get) => ({
 
       const nextOrder = isNewFile
         ? [...(existingOrder ?? []), resolvedKey]
-        : existingOrder ?? []
+        : (existingOrder ?? [])
 
       const now = Date.now()
       const prevSample = existingSamples?.[resolvedKey]
@@ -134,10 +136,11 @@ export const useTransferUiStore = create<TransferUiState>((set, get) => ({
       const delta = Math.max(0, bytesSent - prevSent)
       const prevSpeed = existingMetrics?.[resolvedKey]?.speedBytesPerSec ?? 0
       const speed =
-        delta > 0
-          ? Math.max(0, Math.round((delta * 1000) / dtMs))
-          : prevSpeed
-      const remaining = Math.max(0, totalBytes - Math.min(bytesSent, totalBytes))
+        delta > 0 ? Math.max(0, Math.round((delta * 1000) / dtMs)) : prevSpeed
+      const remaining = Math.max(
+        0,
+        totalBytes - Math.min(bytesSent, totalBytes)
+      )
       const etaSeconds = speed > 0 ? Math.round(remaining / speed) : null
 
       const nextSamples = {

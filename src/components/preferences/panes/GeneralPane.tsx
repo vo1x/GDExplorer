@@ -215,7 +215,8 @@ const GeneralPaneForm: React.FC<{
   const rcloneRemoteError = useMemo(() => {
     const trimmed = rcloneRemoteInput.trim()
     if (!trimmed) return 'Please enter a remote name.'
-    if (trimmed.length > 64) return 'Remote name is too long (max 64 characters).'
+    if (trimmed.length > 64)
+      return 'Remote name is too long (max 64 characters).'
     return null
   }, [rcloneRemoteInput])
 
