@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 
 let checkInFlight = false
 
-type CheckOptions = {
+interface CheckOptions {
   notifyIfLatest?: boolean
   notifyOnError?: boolean
   notifyOnReady?: boolean

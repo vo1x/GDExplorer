@@ -25,7 +25,7 @@ export const AboutPane: React.FC = () => {
       </div>
       <div className="space-y-2">
         <p className="text-sm text-muted-foreground">
-          Download updates automatically and restart when you're ready.
+          Download updates automatically and restart when you are ready.
         </p>
         <Button
           type="button"
