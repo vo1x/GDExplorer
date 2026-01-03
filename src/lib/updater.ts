@@ -30,8 +30,12 @@ export async function checkForUpdates(options: CheckOptions = {}) {
       return
     }
 
-    const { updateDownloading, updateReady, setUpdateDownloading, setUpdateReady } =
-      useUIStore.getState()
+    const {
+      updateDownloading,
+      updateReady,
+      setUpdateDownloading,
+      setUpdateReady,
+    } = useUIStore.getState()
     if (updateReady || updateDownloading) {
       if (notifyOnReady && updateReady) {
         toast('Update ready. Click the download icon to restart.')

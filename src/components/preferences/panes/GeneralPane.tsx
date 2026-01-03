@@ -631,7 +631,6 @@ const GeneralPaneForm: React.FC<{
           </div>
         </SettingsField>
       </SettingsSection>
-
     </div>
   )
 }
