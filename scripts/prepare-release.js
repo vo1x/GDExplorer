@@ -97,9 +97,18 @@ async function prepareRelease() {
     )
     console.log(`   ${oldTauriVersion} → ${cleanVersion}`)
 
-    // Run npm install to update lock files
+    // Update lock files using the repo's package manager
     console.log('\n📦 Updating lock files...')
-    exec('npm install', { silent: true })
+    const packageManager = pkg.packageManager || ''
+    let lockCommand = 'npm install --package-lock-only --ignore-scripts'
+
+    if (packageManager.startsWith('pnpm')) {
+      lockCommand = 'pnpm install --lockfile-only --ignore-scripts'
+    } else if (packageManager.startsWith('yarn')) {
+      lockCommand = 'yarn install --mode=update-lockfile'
+    }
+
+    exec(lockCommand, { silent: true })
     console.log('✅ Lock files updated')
 
     // Verify configurations
