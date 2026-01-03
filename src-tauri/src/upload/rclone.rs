@@ -1,6 +1,6 @@
 use crate::upload::events::{
-    CompletedEvent, FileListEntry, FileListEvent, FileProgressEvent, ItemStatusEvent, ProgressEvent,
-    Summary,
+    CompletedEvent, FileListEntry, FileListEvent, FileProgressEvent, ItemStatusEvent,
+    ProgressEvent, Summary,
 };
 use crate::upload::scheduler::{wait_if_paused, QueueItemInput, UploadControlHandle};
 use regex::Regex;
@@ -69,7 +69,9 @@ pub async fn run_rclone_job(
     );
     let sa_files = load_service_account_files(&service_account_folder)?;
     if sa_files.is_empty() {
-        return Err("No valid service account JSON files found in the selected folder.".to_string());
+        return Err(
+            "No valid service account JSON files found in the selected folder.".to_string(),
+        );
     }
 
     let sa_mode = Arc::new(AtomicU8::new(ServiceAccountMode::Unknown as u8));
@@ -422,9 +424,7 @@ async fn run_rclone_command(
         if let Some(entries) = parse_json_file_progress(&line) {
             for (file_path, bytes, total) in entries {
                 let should_emit = match last_file_progress.get(&file_path) {
-                    Some((last_bytes, last_total)) => {
-                        *last_bytes != bytes || *last_total != total
-                    }
+                    Some((last_bytes, last_total)) => *last_bytes != bytes || *last_total != total,
                     None => true,
                 };
                 if should_emit {
@@ -562,8 +562,7 @@ async fn monitor_pause_state(
             break;
         }
 
-        let should_pause =
-            *pause_all_rx.borrow() || paused_items_rx.borrow().contains(&item.id);
+        let should_pause = *pause_all_rx.borrow() || paused_items_rx.borrow().contains(&item.id);
         if should_pause != is_paused {
             is_paused = should_pause;
             log::debug!(
@@ -730,8 +729,7 @@ fn pick_service_account(sa_files: &[ServiceAccountFile]) -> Result<&ServiceAccou
 }
 
 fn progress_regex() -> Regex {
-    Regex::new(r"([0-9.]+)\s*([A-Za-z]+)\s*/\s*([0-9.]+)\s*([A-Za-z]+)")
-        .expect("progress regex")
+    Regex::new(r"([0-9.]+)\s*([A-Za-z]+)\s*/\s*([0-9.]+)\s*([A-Za-z]+)").expect("progress regex")
 }
 
 fn parse_progress_line(regex: &Regex, line: &str) -> Option<(u64, u64)> {
@@ -911,7 +909,9 @@ async fn read_rclone_stream<R: tokio::io::AsyncRead + Unpin>(
             let b = pending[i];
             if b == b'\n' || b == b'\r' {
                 if i > start {
-                    let line = String::from_utf8_lossy(&pending[start..i]).trim().to_string();
+                    let line = String::from_utf8_lossy(&pending[start..i])
+                        .trim()
+                        .to_string();
                     if !line.is_empty() {
                         let _ = tx.send(line).await;
                     }

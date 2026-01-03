@@ -7,8 +7,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Manager, State};
 
-mod upload;
 mod rclone_tools;
+mod upload;
 #[derive(Default)]
 struct UploadControlState(tokio::sync::Mutex<Option<UploadControl>>);
 
@@ -203,15 +203,18 @@ async fn list_item_files(path: String, kind: LocalPathKind) -> Result<Vec<FileLi
 
     match kind {
         LocalPathKind::File => {
-            let metadata = std::fs::metadata(&path_buf)
-                .map_err(|e| format!("Failed to stat file: {e}"))?;
+            let metadata =
+                std::fs::metadata(&path_buf).map_err(|e| format!("Failed to stat file: {e}"))?;
             files.push(FileListEntry {
                 file_path: path_buf.to_string_lossy().to_string(),
                 total_bytes: metadata.len(),
             });
         }
         LocalPathKind::Folder => {
-            for entry in walkdir::WalkDir::new(&path_buf).into_iter().filter_map(Result::ok) {
+            for entry in walkdir::WalkDir::new(&path_buf)
+                .into_iter()
+                .filter_map(Result::ok)
+            {
                 if !entry.file_type().is_file() {
                     continue;
                 }

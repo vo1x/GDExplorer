@@ -1,7 +1,7 @@
 use crate::upload::drive_client::DriveClient;
 use crate::upload::events::{
-    CompletedEvent, FileListEntry, FileListEvent, FileProgressEvent, ItemStatusEvent, ProgressEvent,
-    Summary,
+    CompletedEvent, FileListEntry, FileListEvent, FileProgressEvent, ItemStatusEvent,
+    ProgressEvent, Summary,
 };
 use crate::upload::mirror::{build_tasks_for_item, read_file_chunk, FolderAggregate, UploadTask};
 use crate::upload::sa_loader::load_service_accounts;

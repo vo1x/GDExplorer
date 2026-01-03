@@ -36,8 +36,8 @@ pub async fn install_rclone_windows(app: AppHandle) -> Result<String, String> {
         .await
         .map_err(|e| format!("Failed to read rclone download: {e}"))?;
 
-    let mut zip_file = File::create(&zip_path)
-        .map_err(|e| format!("Failed to create rclone zip file: {e}"))?;
+    let mut zip_file =
+        File::create(&zip_path).map_err(|e| format!("Failed to create rclone zip file: {e}"))?;
     zip_file
         .write_all(&bytes)
         .map_err(|e| format!("Failed to write rclone zip file: {e}"))?;
@@ -90,8 +90,9 @@ pub async fn configure_rclone_remote(
         return Err("Rclone setup is only available on Windows.".to_string());
     }
 
-    let service_account_file =
-        pick_service_account_file(&service_account_folder)?.to_string_lossy().to_string();
+    let service_account_file = pick_service_account_file(&service_account_folder)?
+        .to_string_lossy()
+        .to_string();
 
     let status = std::process::Command::new(&rclone_path)
         .args([
