@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button'
 import { useUIStore } from '@/store/ui-store'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { Download, PanelLeft, PanelLeftClose, Settings } from 'lucide-react'
-import { useEffect, useState } from 'react'
 
 interface TitleBarProps {
   className?: string
@@ -21,33 +20,8 @@ export function TitleBar({ className, title = 'GDExplorer' }: TitleBarProps) {
     updateVersion,
     setUpdateReady,
   } = useUIStore()
-  const [platformName, setPlatformName] = useState<
-    'macos' | 'windows' | null
-  >(null)
 
-  useEffect(() => {
-    const platform = navigator.platform.toLowerCase()
-    if (platform.includes('mac')) {
-      setPlatformName('macos')
-      return
-    }
-    if (platform.includes('win')) {
-      setPlatformName('windows')
-      return
-    }
-
-    const userAgent = navigator.userAgent.toLowerCase()
-    if (userAgent.includes('mac')) {
-      setPlatformName('macos')
-      return
-    }
-    if (userAgent.includes('windows')) {
-      setPlatformName('windows')
-      return
-    }
-
-    setPlatformName(null)
-  }, [])
+  const platformName = detectPlatform()
 
   return (
     <div
@@ -124,3 +98,15 @@ export function TitleBar({ className, title = 'GDExplorer' }: TitleBarProps) {
 }
 
 export default TitleBar
+
+function detectPlatform(): 'macos' | 'windows' | null {
+  const platform = navigator.platform.toLowerCase()
+  if (platform.includes('mac')) return 'macos'
+  if (platform.includes('win')) return 'windows'
+
+  const userAgent = navigator.userAgent.toLowerCase()
+  if (userAgent.includes('mac')) return 'macos'
+  if (userAgent.includes('windows')) return 'windows'
+
+  return null
+}

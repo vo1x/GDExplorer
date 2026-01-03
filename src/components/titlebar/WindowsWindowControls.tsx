@@ -7,6 +7,10 @@ interface WindowsWindowControlsProps extends HTMLProps<HTMLDivElement> {
   className?: string
 }
 
+const ignore = (error: unknown) => {
+  void error
+}
+
 export function WindowsWindowControls({
   className,
   ...props
@@ -15,14 +19,14 @@ export function WindowsWindowControls({
 
   useEffect(() => {
     const appWindow = getCurrentWindow()
-    appWindow.isMaximized().then(setIsMaximized).catch(() => {})
+    appWindow.isMaximized().then(setIsMaximized).catch(ignore)
 
     const unlisten = appWindow.onResized(() => {
-      appWindow.isMaximized().then(setIsMaximized).catch(() => {})
+      appWindow.isMaximized().then(setIsMaximized).catch(ignore)
     })
 
     return () => {
-      unlisten.then(stop => stop()).catch(() => {})
+      unlisten.then(stop => stop()).catch(ignore)
     }
   }, [])
 
