@@ -273,17 +273,27 @@ async fn run_rclone_command(
 
     let args = build_rclone_args(prefs, destination_folder_id, item, sa_path);
 
-    let mut command = Command::new(&prefs.rclone_path);
-    command
-        .args(&args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
     #[cfg(windows)]
-    {
-        use tokio::process::CommandExt;
+    let mut command = {
+        use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
-        command.creation_flags(CREATE_NO_WINDOW);
-    }
+        let mut std_command = std::process::Command::new(&prefs.rclone_path);
+        std_command
+            .args(&args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .creation_flags(CREATE_NO_WINDOW);
+        Command::from(std_command)
+    };
+    #[cfg(not(windows))]
+    let mut command = {
+        let mut command = Command::new(&prefs.rclone_path);
+        command
+            .args(&args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        command
+    };
 
     log::debug!(
         target: "rclone",
