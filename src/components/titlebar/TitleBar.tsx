@@ -3,7 +3,13 @@ import { MacOSWindowControls } from './MacOSWindowControls'
 import { WindowsWindowControls } from './WindowsWindowControls'
 import { Button } from '@/components/ui/button'
 import { useUIStore } from '@/store/ui-store'
-import { Download, Loader2, PanelLeft, PanelLeftClose, Settings } from 'lucide-react'
+import {
+  Download,
+  Loader2,
+  PanelLeft,
+  PanelLeftClose,
+  Settings,
+} from 'lucide-react'
 import { installUpdate } from '@/lib/updater'
 
 interface TitleBarProps {
