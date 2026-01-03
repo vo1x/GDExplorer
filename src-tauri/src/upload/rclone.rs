@@ -280,8 +280,9 @@ async fn run_rclone_command(
         .stderr(Stdio::piped());
     #[cfg(windows)]
     {
+        use tokio::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
-        std::os::windows::process::CommandExt::creation_flags(&mut command, CREATE_NO_WINDOW);
+        command.creation_flags(CREATE_NO_WINDOW);
     }
 
     log::debug!(
