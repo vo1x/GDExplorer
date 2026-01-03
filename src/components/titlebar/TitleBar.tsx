@@ -1,9 +1,11 @@
 import { cn } from '@/lib/utils'
 import { MacOSWindowControls } from './MacOSWindowControls'
+import { WindowsWindowControls } from './WindowsWindowControls'
 import { Button } from '@/components/ui/button'
 import { useUIStore } from '@/store/ui-store'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { Download, PanelLeft, PanelLeftClose, Settings } from 'lucide-react'
+import { useEffect, useState } from 'react'
 
 interface TitleBarProps {
   className?: string
@@ -19,6 +21,34 @@ export function TitleBar({ className, title = 'GDExplorer' }: TitleBarProps) {
     updateVersion,
     setUpdateReady,
   } = useUIStore()
+  const [platformName, setPlatformName] = useState<
+    'macos' | 'windows' | null
+  >(null)
+
+  useEffect(() => {
+    const platform = navigator.platform.toLowerCase()
+    if (platform.includes('mac')) {
+      setPlatformName('macos')
+      return
+    }
+    if (platform.includes('win')) {
+      setPlatformName('windows')
+      return
+    }
+
+    const userAgent = navigator.userAgent.toLowerCase()
+    if (userAgent.includes('mac')) {
+      setPlatformName('macos')
+      return
+    }
+    if (userAgent.includes('windows')) {
+      setPlatformName('windows')
+      return
+    }
+
+    setPlatformName(null)
+  }, [])
+
   return (
     <div
       data-tauri-drag-region
@@ -29,7 +59,7 @@ export function TitleBar({ className, title = 'GDExplorer' }: TitleBarProps) {
     >
       {/* Left side - Window Controls + Left Actions */}
       <div className="flex items-center">
-        <MacOSWindowControls />
+        {platformName === 'macos' ? <MacOSWindowControls /> : null}
 
         {/* Left Action Buttons */}
         <div className="flex items-center gap-1">
@@ -85,6 +115,9 @@ export function TitleBar({ className, title = 'GDExplorer' }: TitleBarProps) {
         >
           <Settings className="h-3 w-3" />
         </Button>
+        {platformName === 'windows' ? (
+          <WindowsWindowControls className="ml-2" />
+        ) : null}
       </div>
     </div>
   )

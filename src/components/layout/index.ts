@@ -9,3 +9,7 @@ export {
   MacOSWindowControls,
   default as MacOSWindowControlsDefault,
 } from '../titlebar/MacOSWindowControls'
+export {
+  WindowsWindowControls,
+  default as WindowsWindowControlsDefault,
+} from '../titlebar/WindowsWindowControls'
