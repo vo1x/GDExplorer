@@ -45,6 +45,24 @@ async function prepareRelease() {
   console.log(`🚀 Preparing release ${tagVersion}...\n`)
 
   try {
+    const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
+    const packageManager = pkg.packageManager || ''
+    const runCommand = script => {
+      if (packageManager.startsWith('pnpm')) return `pnpm run ${script}`
+      if (packageManager.startsWith('yarn')) return `yarn run ${script}`
+      return `npm run ${script}`
+    }
+
+    const lockCommand = () => {
+      if (packageManager.startsWith('pnpm')) {
+        return 'pnpm install --lockfile-only --ignore-scripts'
+      }
+      if (packageManager.startsWith('yarn')) {
+        return 'yarn install --mode=update-lockfile'
+      }
+      return 'npm install --package-lock-only --ignore-scripts'
+    }
+
     // Check git status
     console.log('🔍 Checking git status...')
     const gitStatus = exec('git status --porcelain', { silent: true })
@@ -60,12 +78,11 @@ async function prepareRelease() {
 
     // Run all checks first
     console.log('\n🔍 Running pre-release checks...')
-    exec('npm run check:all')
+    exec(runCommand('check:all'))
     console.log('✅ All checks passed')
 
     // Update package.json
     console.log('\n📝 Updating package.json...')
-    const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
     const oldPkgVersion = pkg.version
     pkg.version = cleanVersion
     fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n')
@@ -99,16 +116,7 @@ async function prepareRelease() {
 
     // Update lock files using the repo's package manager
     console.log('\n📦 Updating lock files...')
-    const packageManager = pkg.packageManager || ''
-    let lockCommand = 'npm install --package-lock-only --ignore-scripts'
-
-    if (packageManager.startsWith('pnpm')) {
-      lockCommand = 'pnpm install --lockfile-only --ignore-scripts'
-    } else if (packageManager.startsWith('yarn')) {
-      lockCommand = 'yarn install --mode=update-lockfile'
-    }
-
-    exec(lockCommand, { silent: true })
+    exec(lockCommand(), { silent: true })
     console.log('✅ Lock files updated')
 
     // Verify configurations
