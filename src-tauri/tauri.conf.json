@@ -28,9 +28,7 @@
         "shadow": true,
         "dragDropEnabled": true,
         "windowEffects": {
-          "effects": [
-            "hudWindow"
-          ],
+          "effects": ["hudWindow"],
           "radius": 12,
           "state": "active"
         }
