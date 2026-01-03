@@ -8,9 +8,9 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
@@ -29,29 +29,6 @@ pub struct RclonePreferences {
     pub checkers: u16,
 }
 
-#[derive(Clone, Debug)]
-struct ServiceAccountFile {
-    path: PathBuf,
-    email: Option<String>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ServiceAccountMode {
-    Unknown = 0,
-    Directory = 1,
-    SingleFile = 2,
-}
-
-impl ServiceAccountMode {
-    fn from_u8(value: u8) -> Self {
-        match value {
-            1 => ServiceAccountMode::Directory,
-            2 => ServiceAccountMode::SingleFile,
-            _ => ServiceAccountMode::Unknown,
-        }
-    }
-}
-
 pub async fn run_rclone_job(
     app: AppHandle,
     control: UploadControlHandle,
@@ -67,34 +44,10 @@ pub async fn run_rclone_job(
         queue.len(),
         max_concurrent
     );
-    let sa_files = load_service_account_files(&service_account_folder)?;
-    if sa_files.is_empty() {
+    let sa_files = count_service_account_files(&service_account_folder)?;
+    if sa_files == 0 {
         return Err(
             "No valid service account JSON files found in the selected folder.".to_string(),
-        );
-    }
-
-    let sa_mode = Arc::new(AtomicU8::new(ServiceAccountMode::Unknown as u8));
-    let supports_dir_flag = detect_sa_directory_support(&prefs).await.unwrap_or(false);
-    if supports_dir_flag {
-        sa_mode.store(ServiceAccountMode::Directory as u8, Ordering::Relaxed);
-        log::debug!(
-            target: "rclone",
-            "sa.mode directory folder={}",
-            service_account_folder
-        );
-    } else {
-        sa_mode.store(ServiceAccountMode::SingleFile as u8, Ordering::Relaxed);
-        log::debug!(
-            target: "rclone",
-            "sa.mode single-file folder={}",
-            service_account_folder
-        );
-        let _ = app.emit(
-            "upload:notice",
-            serde_json::json!({
-                "message": "Rclone does not support --drive-service-account-file-path. Using a single service account per file.",
-            }),
         );
     }
 
@@ -132,8 +85,6 @@ pub async fn run_rclone_job(
         let control = control.clone();
         let rx = rx.clone();
         let prefs = prefs.clone();
-        let sa_files = sa_files.clone();
-        let sa_mode = sa_mode.clone();
         let destination_folder_id = destination_folder_id.clone();
         let succeeded = succeeded.clone();
         let failed = failed.clone();
@@ -154,8 +105,6 @@ pub async fn run_rclone_job(
                     &app,
                     &control,
                     &prefs,
-                    &sa_files,
-                    &sa_mode,
                     &service_account_folder,
                     &destination_folder_id,
                     &item,
@@ -227,8 +176,6 @@ async fn run_rclone_for_item(
     app: &AppHandle,
     control: &UploadControlHandle,
     prefs: &RclonePreferences,
-    sa_files: &[ServiceAccountFile],
-    sa_mode: &Arc<AtomicU8>,
     service_account_folder: &str,
     destination_folder_id: &str,
     item: &QueueItemInput,
@@ -268,44 +215,15 @@ async fn run_rclone_for_item(
 
     wait_if_paused(control, &item.id).await?;
 
-    let mode = ServiceAccountMode::from_u8(sa_mode.load(Ordering::Relaxed));
-
-    let attempt = run_rclone_command(
+    run_rclone_command(
         app,
         control,
         prefs,
-        sa_files,
-        mode,
         service_account_folder,
         destination_folder_id,
         item,
     )
-    .await;
-
-    if let Err(err) = &attempt {
-        if mode == ServiceAccountMode::Directory && err.contains("unknown flag") {
-            sa_mode.store(ServiceAccountMode::SingleFile as u8, Ordering::Relaxed);
-            let _ = app.emit(
-                "upload:notice",
-                serde_json::json!({
-                    "message": "Rclone does not support --drive-service-account-file-path. Falling back to a single service account per file.",
-                }),
-            );
-            return run_rclone_command(
-                app,
-                control,
-                prefs,
-                sa_files,
-                ServiceAccountMode::SingleFile,
-                service_account_folder,
-                destination_folder_id,
-                item,
-            )
-            .await;
-        }
-    }
-
-    attempt
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -313,8 +231,6 @@ async fn run_rclone_command(
     app: &AppHandle,
     control: &UploadControlHandle,
     prefs: &RclonePreferences,
-    sa_files: &[ServiceAccountFile],
-    mode: ServiceAccountMode,
     service_account_folder: &str,
     destination_folder_id: &str,
     item: &QueueItemInput,
@@ -323,24 +239,11 @@ async fn run_rclone_command(
         return Err("Upload canceled".to_string());
     }
 
-    let (sa_path, sa_email) = match mode {
-        ServiceAccountMode::Directory => (None, None),
-        ServiceAccountMode::SingleFile => {
-            let sa = pick_service_account(sa_files)?;
-            (Some(sa.path.clone()), sa.email.clone())
-        }
-        ServiceAccountMode::Unknown => (None, None),
-    };
-
     log::debug!(
         target: "rclone",
-        "upload.sa id={} mode={:?} sa={}",
+        "upload.sa id={} sa={}",
         item.id,
-        mode,
-        sa_path
-            .as_ref()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| service_account_folder.to_string())
+        service_account_folder
     );
     let _ = app.emit(
         "upload:item_status",
@@ -350,22 +253,20 @@ async fn run_rclone_command(
             kind: item.kind.clone(),
             status: "uploading".to_string(),
             message: None,
-            sa_email: sa_email.clone(),
+            sa_email: None,
         },
     );
 
-    let mut args = build_rclone_args(
+    let args = build_rclone_args(
         prefs,
         destination_folder_id,
         item,
-        mode,
         service_account_folder,
-        sa_path.as_ref(),
     );
 
     let mut command = Command::new(&prefs.rclone_path);
     command
-        .args(&mut args)
+        .args(&args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     #[cfg(windows)]
@@ -416,13 +317,9 @@ async fn run_rclone_command(
     let mut last_bytes = 0_u64;
     let mut last_total = 0_u64;
     let mut last_file_progress: HashMap<String, (u64, u64)> = HashMap::new();
-    let mut saw_unknown_flag = false;
 
     while let Some(line) = line_rx.recv().await {
         log::debug!(target: "rclone", "{}", line);
-        if line.contains("unknown flag: --drive-service-account-file-path") {
-            saw_unknown_flag = true;
-        }
         if let Some(entries) = parse_json_file_progress(&line) {
             for (file_path, bytes, total) in entries {
                 let should_emit = match last_file_progress.get(&file_path) {
@@ -475,7 +372,7 @@ async fn run_rclone_command(
                 kind: item.kind.clone(),
                 status: "done".to_string(),
                 message: None,
-                sa_email,
+                sa_email: None,
             },
         );
         return Ok(());
@@ -487,9 +384,6 @@ async fn run_rclone_command(
         item.id,
         status
     );
-    if saw_unknown_flag {
-        return Err("unknown flag: --drive-service-account-file-path".to_string());
-    }
 
     Err(format!("Rclone failed with status: {status}"))
 }
@@ -620,9 +514,7 @@ fn build_rclone_args(
     prefs: &RclonePreferences,
     destination_folder_id: &str,
     item: &QueueItemInput,
-    mode: ServiceAccountMode,
     service_account_folder: &str,
-    sa_path: Option<&PathBuf>,
 ) -> Vec<String> {
     let mut args = vec![
         "copy".to_string(),
@@ -655,30 +547,18 @@ fn build_rclone_args(
         "--log-level".to_string(),
         "INFO".to_string(),
         "--use-json-log".to_string(),
+        "--drive-service-account-file-path".to_string(),
+        service_account_folder.to_string(),
     ];
-
-    match mode {
-        ServiceAccountMode::Directory => {
-            args.push("--drive-service-account-file-path".to_string());
-            args.push(service_account_folder.to_string());
-        }
-        ServiceAccountMode::SingleFile => {
-            if let Some(path) = sa_path {
-                args.push("--drive-service-account-file".to_string());
-                args.push(path.to_string_lossy().to_string());
-            }
-        }
-        ServiceAccountMode::Unknown => {}
-    }
 
     args
 }
 
-fn load_service_account_files(folder: &str) -> Result<Vec<ServiceAccountFile>, String> {
+fn count_service_account_files(folder: &str) -> Result<usize, String> {
     let entries = std::fs::read_dir(folder)
         .map_err(|e| format!("Failed to read service account folder: {e}"))?;
 
-    let mut accounts = Vec::new();
+    let mut count = 0;
     for entry in entries {
         let entry = entry.map_err(|e| format!("Failed to read folder entry: {e}"))?;
         let path = entry.path();
@@ -693,41 +573,10 @@ fn load_service_account_files(folder: &str) -> Result<Vec<ServiceAccountFile>, S
         if !is_json {
             continue;
         }
-
-        let email = match read_service_account_email(&path) {
-            Ok(email) => email,
-            Err(_) => continue,
-        };
-        accounts.push(ServiceAccountFile { path, email });
+        count += 1;
     }
 
-    Ok(accounts)
-}
-
-fn read_service_account_email(path: &Path) -> Result<Option<String>, String> {
-    #[derive(serde::Deserialize)]
-    struct ServiceAccountJson {
-        client_email: Option<String>,
-    }
-
-    let contents = std::fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read service account JSON: {e}"))?;
-    let parsed: ServiceAccountJson = serde_json::from_str(&contents)
-        .map_err(|e| format!("Invalid service account JSON: {e}"))?;
-
-    Ok(parsed.client_email)
-}
-
-fn pick_service_account(sa_files: &[ServiceAccountFile]) -> Result<&ServiceAccountFile, String> {
-    if sa_files.is_empty() {
-        return Err("No service account JSON files available.".to_string());
-    }
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or(Duration::from_secs(0))
-        .subsec_nanos();
-    let idx = (nanos as usize) % sa_files.len();
-    Ok(&sa_files[idx])
+    Ok(count)
 }
 
 fn progress_regex() -> Regex {
@@ -872,23 +721,6 @@ fn signal_process(pid: u32, signal: i32) -> Result<(), String> {
     } else {
         Err("Failed to signal rclone process".to_string())
     }
-}
-
-async fn detect_sa_directory_support(prefs: &RclonePreferences) -> Result<bool, String> {
-    let output = Command::new(&prefs.rclone_path)
-        .args(["help", "flags"])
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run rclone help: {e}"))?;
-
-    if !output.status.success() {
-        return Err("Failed to detect rclone flag support.".to_string());
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let combined = format!("{stdout}\n{stderr}");
-    Ok(combined.contains("drive-service-account-file-path"))
 }
 
 async fn read_rclone_stream<R: tokio::io::AsyncRead + Unpin>(

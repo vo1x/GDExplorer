@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useCallback, useMemo, useState } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
 import { Label } from '@/components/ui/label'
@@ -313,9 +313,9 @@ const GeneralPaneForm: React.FC<{
     }
   }
 
-  const presetErrors = useMemo(() => {
+  const getPresetErrors = useCallback((presets: DestinationPreset[]) => {
     const byId: Record<string, string | null> = {}
-    for (const preset of destinationPresetsDraft) {
+    for (const preset of presets) {
       if (!preset.name.trim()) {
         byId[preset.id] = 'Name is required.'
         continue
@@ -328,7 +328,12 @@ const GeneralPaneForm: React.FC<{
       byId[preset.id] = null
     }
     return byId
-  }, [destinationPresetsDraft])
+  }, [])
+
+  const presetErrors = useMemo(
+    () => getPresetErrors(destinationPresetsDraft),
+    [destinationPresetsDraft, getPresetErrors]
+  )
 
   const newPresetError = useMemo(() => {
     if (!newPresetName.trim() && !newPresetUrl.trim()) return null
@@ -339,15 +344,15 @@ const GeneralPaneForm: React.FC<{
     return null
   }, [newPresetName, newPresetUrl])
 
-  const handleSaveDestinationPresets = async () => {
-    const hasErrors = destinationPresetsDraft.some(
-      p => presetErrors[p.id] !== null
-    )
+  const persistDestinationPresets = async (nextDraft: DestinationPreset[]) => {
+    setDestinationPresetsDraft(nextDraft)
+    const nextErrors = getPresetErrors(nextDraft)
+    const hasErrors = nextDraft.some(p => nextErrors[p.id] !== null)
     if (hasErrors) return
 
     const uniqueByUrl = new Set<string>()
     const deduped: DestinationPreset[] = []
-    for (const p of destinationPresetsDraft) {
+    for (const p of nextDraft) {
       const url = p.url.trim()
       if (uniqueByUrl.has(url)) continue
       uniqueByUrl.add(url)
@@ -363,7 +368,8 @@ const GeneralPaneForm: React.FC<{
     }
   }
 
-  const addPreset = () => {
+  const addPreset = async () => {
+    if (!newPresetName.trim() && !newPresetUrl.trim()) return
     if (newPresetError) return
     const url = newPresetUrl.trim()
     const name = newPresetName.trim()
@@ -372,9 +378,9 @@ const GeneralPaneForm: React.FC<{
       name,
       url,
     }
-    setDestinationPresetsDraft(curr => [preset, ...curr])
     setNewPresetName('')
     setNewPresetUrl('')
+    await persistDestinationPresets([preset, ...destinationPresetsDraft])
   }
 
   return (
@@ -407,6 +413,7 @@ const GeneralPaneForm: React.FC<{
           <div className="space-y-2">
             <Input
               inputMode="numeric"
+              type="number"
               value={maxConcurrentInput}
               onChange={e => setMaxConcurrentInput(e.target.value)}
               onBlur={handleSaveMaxConcurrent}
@@ -425,6 +432,7 @@ const GeneralPaneForm: React.FC<{
           <div className="space-y-2">
             <Input
               inputMode="numeric"
+              type="number"
               value={chunkSizeInput}
               onChange={e => setChunkSizeInput(e.target.value)}
               onBlur={handleSaveChunkSize}
@@ -477,6 +485,7 @@ const GeneralPaneForm: React.FC<{
           <div className="space-y-2">
             <Input
               inputMode="numeric"
+              type="number"
               value={rcloneTransfersInput}
               onChange={e => setRcloneTransfersInput(e.target.value)}
               onBlur={handleSaveRcloneTransfers}
@@ -495,6 +504,7 @@ const GeneralPaneForm: React.FC<{
           <div className="space-y-2">
             <Input
               inputMode="numeric"
+              type="number"
               value={rcloneCheckersInput}
               onChange={e => setRcloneCheckersInput(e.target.value)}
               onBlur={handleSaveRcloneCheckers}
@@ -576,6 +586,9 @@ const GeneralPaneForm: React.FC<{
                           )
                         )
                       }
+                      onBlur={() =>
+                        persistDestinationPresets(destinationPresetsDraft)
+                      }
                     />
                     <Input
                       value={preset.url}
@@ -589,13 +602,16 @@ const GeneralPaneForm: React.FC<{
                         )
                       }
                       aria-invalid={Boolean(presetErrors[preset.id])}
+                      onBlur={() =>
+                        persistDestinationPresets(destinationPresetsDraft)
+                      }
                     />
                     <Button
                       type="button"
                       variant="secondary"
                       onClick={() =>
-                        setDestinationPresetsDraft(curr =>
-                          curr.filter(p => p.id !== preset.id)
+                        persistDestinationPresets(
+                          destinationPresetsDraft.filter(p => p.id !== preset.id)
                         )
                       }
                     >
@@ -611,27 +627,6 @@ const GeneralPaneForm: React.FC<{
               )}
             </div>
 
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                onClick={handleSaveDestinationPresets}
-                disabled={savePreferences.isPending}
-              >
-                Save presets
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() =>
-                  setDestinationPresetsDraft(
-                    preferences?.destinationPresets ?? []
-                  )
-                }
-                disabled={savePreferences.isPending}
-              >
-                Reset
-              </Button>
-            </div>
           </div>
         </SettingsField>
       </SettingsSection>

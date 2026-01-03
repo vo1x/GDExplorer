@@ -124,6 +124,10 @@
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
     overscroll-behavior: none;
     min-height: 100vh;
     min-width: 100vw;

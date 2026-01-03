@@ -752,11 +752,25 @@ fn create_app_menu(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error
         )
         .build()?;
 
+    let mut menu_builder = MenuBuilder::new(app).item(&app_submenu);
+
+    #[cfg(target_os = "macos")]
+    {
+        // Build the Edit submenu to enable standard shortcuts (copy/paste/select all)
+        let edit_submenu = SubmenuBuilder::new(app, "Edit")
+            .item(&PredefinedMenuItem::undo(app, None)?)
+            .item(&PredefinedMenuItem::redo(app, None)?)
+            .separator()
+            .item(&PredefinedMenuItem::cut(app, None)?)
+            .item(&PredefinedMenuItem::copy(app, None)?)
+            .item(&PredefinedMenuItem::paste(app, None)?)
+            .item(&PredefinedMenuItem::select_all(app, None)?)
+            .build()?;
+        menu_builder = menu_builder.item(&edit_submenu);
+    }
+
     // Build the main menu with submenus
-    let menu = MenuBuilder::new(app)
-        .item(&app_submenu)
-        .item(&view_submenu)
-        .build()?;
+    let menu = menu_builder.item(&view_submenu).build()?;
 
     // Set the menu for the app
     app.set_menu(menu)?;
