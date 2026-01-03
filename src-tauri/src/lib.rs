@@ -752,7 +752,10 @@ fn create_app_menu(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error
         )
         .build()?;
 
+    #[cfg(target_os = "macos")]
     let mut menu_builder = MenuBuilder::new(app).item(&app_submenu);
+    #[cfg(not(target_os = "macos"))]
+    let menu_builder = MenuBuilder::new(app).item(&app_submenu);
 
     #[cfg(target_os = "macos")]
     {

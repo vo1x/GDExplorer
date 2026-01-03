@@ -17,9 +17,6 @@ use tokio::process::Command;
 use tokio::sync::{mpsc, watch, Mutex};
 use walkdir::WalkDir;
 
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-
 #[derive(Clone, Debug)]
 pub struct RclonePreferences {
     pub rclone_path: String,
@@ -284,7 +281,7 @@ async fn run_rclone_command(
     #[cfg(windows)]
     {
         const CREATE_NO_WINDOW: u32 = 0x08000000;
-        command.creation_flags(CREATE_NO_WINDOW);
+        std::os::windows::process::CommandExt::creation_flags(&mut command, CREATE_NO_WINDOW);
     }
 
     log::debug!(
@@ -444,6 +441,8 @@ async fn monitor_pause_state(
     pid: u32,
     mut done_rx: watch::Receiver<bool>,
 ) {
+    #[cfg(windows)]
+    let _pid = pid;
     let mut pause_all_rx = control.pause_rx.clone();
     let mut paused_items_rx = control.paused_items_rx.clone();
     let mut is_paused = false;

@@ -1,9 +1,11 @@
 import { check } from '@tauri-apps/plugin-updater'
+import { relaunch } from '@tauri-apps/plugin-process'
 import { logger } from '@/lib/logger'
 import { useUIStore } from '@/store/ui-store'
 import { toast } from 'sonner'
 
 let checkInFlight = false
+let pendingUpdate: Awaited<ReturnType<typeof check>> | null = null
 
 interface CheckOptions {
   notifyIfLatest?: boolean
@@ -46,7 +48,7 @@ export async function checkForUpdates(options: CheckOptions = {}) {
     setUpdateDownloading(true, update.version)
     logger.info(`Update available: ${update.version}`)
 
-    await update.downloadAndInstall(event => {
+    await update.download(event => {
       switch (event.event) {
         case 'Started':
           logger.info(`Downloading ${event.data.contentLength} bytes`)
@@ -55,11 +57,12 @@ export async function checkForUpdates(options: CheckOptions = {}) {
           logger.info(`Downloaded: ${event.data.chunkLength} bytes`)
           break
         case 'Finished':
-          logger.info('Download complete, installing...')
+          logger.info('Download complete')
           break
       }
     })
 
+    pendingUpdate = update
     setUpdateReady(true, update.version)
     if (notifyOnReady) {
       toast(`Update ready: ${update.version}. Click to restart.`)
@@ -67,10 +70,26 @@ export async function checkForUpdates(options: CheckOptions = {}) {
   } catch (error) {
     logger.error('Update check failed:', { error: String(error) })
     useUIStore.getState().setUpdateDownloading(false)
+    pendingUpdate = null
     if (notifyOnError) {
       toast.error('Failed to check for updates')
     }
   } finally {
     checkInFlight = false
+  }
+}
+
+export async function installUpdate() {
+  const { updateReady, setUpdateReady } = useUIStore.getState()
+  if (!updateReady || !pendingUpdate) return
+
+  try {
+    await pendingUpdate.install()
+    pendingUpdate = null
+    setUpdateReady(false)
+    await relaunch()
+  } catch (error) {
+    logger.error('Update install failed:', { error: String(error) })
+    toast.error('Failed to install update')
   }
 }
