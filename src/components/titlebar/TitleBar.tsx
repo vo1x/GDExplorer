@@ -1,7 +1,18 @@
+import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { MacOSWindowControls } from './MacOSWindowControls'
 import { WindowsWindowControls } from './WindowsWindowControls'
 import { Button } from '@/components/ui/button'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { useUIStore } from '@/store/ui-store'
 import {
   Download,
@@ -18,6 +29,7 @@ interface TitleBarProps {
 }
 
 export function TitleBar({ className, title = 'GDExplorer' }: TitleBarProps) {
+  const [confirmOpen, setConfirmOpen] = useState(false)
   const {
     leftSidebarVisible,
     toggleLeftSidebar,
@@ -85,7 +97,7 @@ export function TitleBar({ className, title = 'GDExplorer' }: TitleBarProps) {
         {updateReady ? (
           <Button
             onClick={async () => {
-              await installUpdate()
+              setConfirmOpen(true)
             }}
             variant="ghost"
             size="icon"
@@ -112,6 +124,26 @@ export function TitleBar({ className, title = 'GDExplorer' }: TitleBarProps) {
           <WindowsWindowControls className="ml-2" />
         ) : null}
       </div>
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Restart to update?</AlertDialogTitle>
+            <AlertDialogDescription>
+              GDExplorer will restart to install the update.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Later</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                await installUpdate()
+              }}
+            >
+              Restart
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

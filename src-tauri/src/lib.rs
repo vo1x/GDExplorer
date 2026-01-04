@@ -379,6 +379,8 @@ pub struct DestinationPreset {
 #[serde(default)]
 pub struct AppPreferences {
     pub theme: String,
+    #[serde(default = "default_auto_check_updates")]
+    pub auto_check_updates: bool,
     #[serde(alias = "serviceAccountJsonPath")]
     pub service_account_folder_path: Option<String>,
     pub max_concurrent_uploads: u8,
@@ -398,6 +400,7 @@ impl Default for AppPreferences {
     fn default() -> Self {
         Self {
             theme: "system".to_string(),
+            auto_check_updates: true,
             service_account_folder_path: None,
             max_concurrent_uploads: 3,
             upload_chunk_size_mib: 128,
@@ -412,6 +415,10 @@ impl Default for AppPreferences {
 
 fn default_rclone_path() -> String {
     "rclone".to_string()
+}
+
+fn default_auto_check_updates() -> bool {
+    true
 }
 
 fn default_rclone_remote_name() -> String {

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { logger } from './lib/logger'
 import { cleanupOldFiles } from './lib/recovery'
 import { checkForUpdates } from './lib/updater'
@@ -6,8 +6,14 @@ import './App.css'
 import MainWindow from './components/layout/MainWindow'
 import { ThemeProvider } from './components/ThemeProvider'
 import ErrorBoundary from './components/ErrorBoundary'
+import { usePreferences } from './services/preferences'
+import { UpdateSplash } from './components/update/UpdateSplash'
 
 function App() {
+  const { data: preferences } = usePreferences()
+  const [showUpdateSplash, setShowUpdateSplash] = useState(false)
+  const hasCheckedUpdates = useRef(false)
+
   // Initialize command system and cleanup on app startup
   useEffect(() => {
     logger.info('🚀 Frontend application starting up')
@@ -23,18 +29,31 @@ function App() {
       mode: import.meta.env.MODE,
     })
 
-    // Auto-updater logic - check for updates 5 seconds after app loads
-    // Check for updates 5 seconds after app loads
-    const updateTimer = setTimeout(() => {
-      checkForUpdates()
-    }, 5000)
-    return () => clearTimeout(updateTimer)
   }, [])
+
+  useEffect(() => {
+    if (!preferences) return
+    if (!preferences.autoCheckUpdates) return
+    if (hasCheckedUpdates.current) return
+    hasCheckedUpdates.current = true
+
+    setShowUpdateSplash(true)
+    checkForUpdates({
+      notifyIfLatest: false,
+      notifyOnError: false,
+      notifyOnReady: false,
+    })
+      .catch(() => {})
+      .finally(() => {
+        setShowUpdateSplash(false)
+      })
+  }, [preferences])
 
   return (
     <ErrorBoundary>
       <ThemeProvider>
         <MainWindow />
+        <UpdateSplash visible={showUpdateSplash} />
       </ThemeProvider>
     </ErrorBoundary>
   )

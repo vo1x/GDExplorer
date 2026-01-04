@@ -13,14 +13,22 @@ interface CheckOptions {
   notifyOnReady?: boolean
 }
 
-export async function checkForUpdates(options: CheckOptions = {}) {
+export type UpdateCheckResult =
+  | 'latest'
+  | 'downloading'
+  | 'ready'
+  | 'error'
+
+export async function checkForUpdates(
+  options: CheckOptions = {}
+): Promise<UpdateCheckResult> {
   const {
     notifyIfLatest = false,
     notifyOnError = false,
     notifyOnReady = false,
   } = options
 
-  if (checkInFlight) return
+  if (checkInFlight) return 'downloading'
   checkInFlight = true
 
   try {
@@ -29,7 +37,7 @@ export async function checkForUpdates(options: CheckOptions = {}) {
       if (notifyIfLatest) {
         toast.success('You are running the latest version')
       }
-      return
+      return 'latest'
     }
 
     const {
@@ -43,7 +51,7 @@ export async function checkForUpdates(options: CheckOptions = {}) {
       if (notifyOnReady && updateReady) {
         toast('Update ready. Click the download icon to restart.')
       }
-      return
+      return updateReady ? 'ready' : 'downloading'
     }
 
     setUpdateDownloading(true, update.version)
@@ -73,7 +81,6 @@ export async function checkForUpdates(options: CheckOptions = {}) {
         case 'Finished':
           logger.info('Download complete')
           setUpdateProgress(100)
-          toast('Update downloaded. Restart to install.')
           break
       }
     })
@@ -83,6 +90,7 @@ export async function checkForUpdates(options: CheckOptions = {}) {
     if (notifyOnReady) {
       toast(`Update ready: ${update.version}. Click to restart.`)
     }
+    return 'ready'
   } catch (error) {
     logger.error('Update check failed:', { error: String(error) })
     useUIStore.getState().setUpdateDownloading(false)
@@ -91,6 +99,7 @@ export async function checkForUpdates(options: CheckOptions = {}) {
     if (notifyOnError) {
       toast.error('Failed to check for updates')
     }
+    return 'error'
   } finally {
     checkInFlight = false
   }

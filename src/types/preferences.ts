@@ -2,6 +2,7 @@
 // Only contains settings that should be persisted to disk
 export interface AppPreferences {
   theme: string
+  autoCheckUpdates: boolean
   serviceAccountFolderPath: string | null
   maxConcurrentUploads: number
   uploadChunkSizeMib: number
@@ -20,6 +21,7 @@ export interface DestinationPreset {
 
 export const defaultPreferences: AppPreferences = {
   theme: 'system',
+  autoCheckUpdates: true,
   serviceAccountFolderPath: null,
   maxConcurrentUploads: 3,
   uploadChunkSizeMib: 128,
