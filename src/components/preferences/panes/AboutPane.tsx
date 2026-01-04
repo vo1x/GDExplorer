@@ -103,9 +103,11 @@ export const AboutPane: React.FC = () => {
           aria-busy={isCheckingUpdates || updateDownloading}
         >
           {updateReady ? (
-            updateVersion
-              ? `Restart to update (${updateVersion})`
-              : 'Restart to update'
+            updateVersion ? (
+              `Restart to update (${updateVersion})`
+            ) : (
+              'Restart to update'
+            )
           ) : updateDownloading ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />

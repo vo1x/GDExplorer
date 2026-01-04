@@ -13,11 +13,7 @@ interface CheckOptions {
   notifyOnReady?: boolean
 }
 
-export type UpdateCheckResult =
-  | 'latest'
-  | 'downloading'
-  | 'ready'
-  | 'error'
+export type UpdateCheckResult = 'latest' | 'downloading' | 'ready' | 'error'
 
 export async function checkForUpdates(
   options: CheckOptions = {}
@@ -46,7 +42,9 @@ export async function checkForUpdates(
       setUpdateDownloading,
       setUpdateReady,
       setUpdateProgress,
+      setUpdateChecking,
     } = useUIStore.getState()
+    setUpdateChecking(true)
     if (updateReady || updateDownloading) {
       if (notifyOnReady && updateReady) {
         toast('Update ready. Click the download icon to restart.')
@@ -101,6 +99,7 @@ export async function checkForUpdates(
     }
     return 'error'
   } finally {
+    useUIStore.getState().setUpdateChecking(false)
     checkInFlight = false
   }
 }

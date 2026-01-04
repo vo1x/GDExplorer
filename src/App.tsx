@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { logger } from './lib/logger'
 import { cleanupOldFiles } from './lib/recovery'
 import { checkForUpdates } from './lib/updater'
@@ -8,10 +8,11 @@ import { ThemeProvider } from './components/ThemeProvider'
 import ErrorBoundary from './components/ErrorBoundary'
 import { usePreferences } from './services/preferences'
 import { UpdateSplash } from './components/update/UpdateSplash'
+import { useUIStore } from './store/ui-store'
 
 function App() {
   const { data: preferences } = usePreferences()
-  const [showUpdateSplash, setShowUpdateSplash] = useState(false)
+  const { updateChecking, updateDownloading } = useUIStore()
   const hasCheckedUpdates = useRef(false)
 
   // Initialize command system and cleanup on app startup
@@ -28,7 +29,6 @@ function App() {
       isDev: import.meta.env.DEV,
       mode: import.meta.env.MODE,
     })
-
   }, [])
 
   useEffect(() => {
@@ -37,23 +37,18 @@ function App() {
     if (hasCheckedUpdates.current) return
     hasCheckedUpdates.current = true
 
-    setShowUpdateSplash(true)
     checkForUpdates({
       notifyIfLatest: false,
       notifyOnError: false,
       notifyOnReady: false,
-    })
-      .catch(() => {})
-      .finally(() => {
-        setShowUpdateSplash(false)
-      })
+    }).catch(() => undefined)
   }, [preferences])
 
   return (
     <ErrorBoundary>
       <ThemeProvider>
         <MainWindow />
-        <UpdateSplash visible={showUpdateSplash} />
+        <UpdateSplash visible={updateChecking || updateDownloading} />
       </ThemeProvider>
     </ErrorBoundary>
   )
