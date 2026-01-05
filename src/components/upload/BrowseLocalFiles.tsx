@@ -29,6 +29,8 @@ export function BrowseLocalFiles() {
   const recordFileProgress = useTransferUiStore(s => s.recordFileProgress)
   const recordFileList = useTransferUiStore(s => s.recordFileList)
   const clearFileProgress = useTransferUiStore(s => s.clearFileProgress)
+  const pauseAll = useTransferUiStore(s => s.pauseAll)
+  const resumeAll = useTransferUiStore(s => s.resumeAll)
   const { destinationError, destinationFolderId } = useUploadDestinationStore()
   const [isBrowsing, setIsBrowsing] = useState(false)
   const [isDropActive, setIsDropActive] = useState(false)
@@ -247,48 +249,44 @@ export function BrowseLocalFiles() {
     if (selectedIds.length === 0) return
 
     const selected = items.filter(i => selectedIds.includes(i.id))
-    const startable = selected.filter(
-      i => i.status === 'queued' || i.status === 'paused' || !i.status
+    const pausedItems = selected.filter(i => i.status === 'paused')
+    const queuedItems = selected.filter(
+      i => i.status === 'queued' || !i.status
     )
 
-    if (isUploading) {
-      const toResume = startable
-        .filter(i => i.status === 'paused')
-        .map(i => i.id)
-      if (toResume.length === 0) {
-        toast.message('Nothing to start', {
-          description: 'Select queued or paused items.',
-        })
-        return
-      }
-      invoke('pause_items', { itemIds: toResume, paused: false }).catch(err => {
-        logger.debug('pause_items resume failed', { error: String(err) })
-      })
-      for (const id of toResume) {
-        setItemStatus(id, 'uploading', null, null)
-      }
-      return
-    }
-
-    if (startable.length === 0) {
+    if (pausedItems.length === 0 && queuedItems.length === 0) {
       toast.message('Nothing to start', {
         description: 'Select queued or paused items.',
       })
       return
     }
 
+    if (pausedItems.length > 0) {
+      const toResume = pausedItems.map(i => i.id)
+      setIsUploading(true)
+      invoke('pause_items', { itemIds: toResume, paused: false }).catch(err => {
+        logger.debug('pause_items resume failed', { error: String(err) })
+      })
+      resumeAll(toResume)
+      for (const id of toResume) {
+        setItemStatus(id, 'uploading', null, null)
+      }
+    }
+
+    if (queuedItems.length === 0) return
+
     setIsUploading(true)
 
-    clearFileProgress(startable.map(i => i.id))
-    resetItemsUploadState(startable.map(i => i.id))
-    for (const it of startable) {
+    clearFileProgress(queuedItems.map(i => i.id))
+    resetItemsUploadState(queuedItems.map(i => i.id))
+    for (const it of queuedItems) {
       setItemStatus(it.id, 'preparing', null, null)
     }
 
     try {
       await invoke('start_upload', {
         args: {
-          queueItems: startable.map(item => ({
+          queueItems: queuedItems.map(item => ({
             id: item.id,
             path: item.path,
             kind: item.kind,
@@ -317,9 +315,16 @@ export function BrowseLocalFiles() {
     invoke('pause_items', { itemIds: toPause, paused: true }).catch(err => {
       logger.debug('pause_items pause failed', { error: String(err) })
     })
+    pauseAll(toPause)
     for (const id of toPause) {
       setItemStatus(id, 'paused', null, null)
     }
+    const remainingActive = items.some(
+      item =>
+        !toPause.includes(item.id) &&
+        (item.status === 'uploading' || item.status === 'preparing')
+    )
+    if (!remainingActive) setIsUploading(false)
   }
 
   return (

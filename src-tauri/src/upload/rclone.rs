@@ -17,6 +17,43 @@ use tokio::process::Command;
 use tokio::sync::{mpsc, watch, Mutex};
 use walkdir::WalkDir;
 
+#[cfg(windows)]
+fn set_process_paused(pid: u32, paused: bool) {
+    use std::ffi::c_void;
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_SUSPEND_RESUME,
+    };
+
+    let access = PROCESS_SUSPEND_RESUME | PROCESS_QUERY_INFORMATION;
+    unsafe {
+        let handle = OpenProcess(access, 0, pid);
+        if handle.is_null() {
+            log::debug!(target: "rclone", "upload.pause open-process failed id={}", pid);
+            return;
+        }
+        let module = GetModuleHandleA(b"ntdll.dll\0".as_ptr() as _);
+        if module.is_null() {
+            CloseHandle(handle);
+            return;
+        }
+        let name: &[u8] = if paused {
+            b"NtSuspendProcess\0"
+        } else {
+            b"NtResumeProcess\0"
+        };
+        let proc = GetProcAddress(module, name.as_ptr() as _);
+        let Some(proc) = proc else {
+            CloseHandle(handle);
+            return;
+        };
+        let func: unsafe extern "system" fn(*mut c_void) -> u32 = std::mem::transmute(proc);
+        let _ = func(handle);
+        CloseHandle(handle);
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct RclonePreferences {
     pub rclone_path: String,
@@ -499,12 +536,7 @@ async fn monitor_pause_state(
             }
             #[cfg(windows)]
             {
-                log::debug!(
-                    target: "rclone",
-                    "upload.pause skipped on Windows id={} paused={}",
-                    item.id,
-                    is_paused
-                );
+                set_process_paused(pid, is_paused);
             }
             let _ = app.emit(
                 "upload:item_status",

@@ -34,12 +34,56 @@ import {
   AlertTriangleIcon,
   ChevronRightIcon,
   ChevronDownIcon,
+  CheckIcon,
+  MinusIcon,
 } from 'lucide-react'
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+
+function SelectionCheckbox({
+  checked,
+  indeterminate,
+  onChange,
+  ariaLabel,
+  onClick,
+}: {
+  checked: boolean
+  indeterminate?: boolean
+  onChange: (checked: boolean) => void
+  ariaLabel: string
+  onClick?: (event: MouseEvent<HTMLDivElement>) => void
+}) {
+  const ref = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.indeterminate = Boolean(indeterminate)
+    }
+  }, [indeterminate])
+
+  return (
+    <div onClick={onClick} className="flex items-center justify-center">
+      <div className="relative flex size-3.5 items-center justify-center">
+        <input
+          ref={ref}
+          type="checkbox"
+          className="peer size-3.5 cursor-pointer appearance-none rounded-[4px] border border-muted-foreground/30 bg-muted/20 hover:bg-muted/30 checked:border-primary/70 checked:bg-primary/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary/60"
+          checked={checked}
+          onChange={event => onChange(event.target.checked)}
+          aria-label={ariaLabel}
+        />
+        {indeterminate ? (
+          <MinusIcon className="pointer-events-none absolute size-2.5 text-primary-foreground" />
+        ) : checked ? (
+          <CheckIcon className="pointer-events-none absolute size-2.5 text-primary-foreground" />
+        ) : null}
+      </div>
+    </div>
+  )
+}
 
 function getPathName(path: string): string {
   const normalized = path.replace(/[/\\]+$/g, '')
@@ -100,6 +144,7 @@ export function TransferTable({
   const fileMetricsById = useTransferUiStore(s => s.fileMetricsById)
   const recordFileList = useTransferUiStore(s => s.recordFileList)
   const listRequestRef = useRef<Record<string, boolean>>({})
+  const showSelection = items.length >= 2
 
   const rows = useMemo((): TransferRowData[] => {
     return items.map(item => {
@@ -241,6 +286,31 @@ export function TransferTable({
   const table = useReactTable({
     data: rows,
     columns: [
+      ...(showSelection
+        ? [
+            {
+              id: 'select',
+              header: ({ table }) => (
+                <SelectionCheckbox
+                  checked={table.getIsAllPageRowsSelected()}
+                  indeterminate={table.getIsSomePageRowsSelected()}
+                  onChange={checked =>
+                    table.toggleAllPageRowsSelected(checked)
+                  }
+                  ariaLabel="Select all transfers"
+                />
+              ),
+              cell: ({ row }) => (
+                <SelectionCheckbox
+                  checked={row.getIsSelected()}
+                  onChange={checked => row.toggleSelected(checked)}
+                  ariaLabel={`Select ${row.original.name}`}
+                  onClick={event => event.stopPropagation()}
+                />
+              ),
+            },
+          ]
+        : []),
       {
         header: 'Name',
         accessorKey: 'name',
@@ -254,8 +324,6 @@ export function TransferTable({
                   type="button"
                   onClick={event => {
                     event.stopPropagation()
-                    setRowSelection({ [item.id]: true })
-                    lastIndexRef.current = row.index
                     if (!listRequestRef.current[item.id]) {
                       listRequestRef.current[item.id] = true
                       const shouldFetch =
@@ -305,7 +373,9 @@ export function TransferTable({
               ) : (
                 <FileIcon className="size-4 shrink-0 text-muted-foreground" />
               )}
-              <div className="truncate font-medium">{item.name}</div>
+              <div className="text-[12.5px] font-medium leading-4 font-mono tracking-tight break-words whitespace-normal">
+                {item.name}
+              </div>
             </div>
           )
         },
@@ -533,7 +603,12 @@ export function TransferTable({
         ].join(' ')}
       >
         <div
-          className="grid grid-cols-[minmax(220px,1.8fr)_minmax(180px,1.4fr)_110px_100px_110px_80px] items-center gap-3 border-b bg-muted/20 px-3 py-2 text-[11px] font-medium text-muted-foreground"
+          className={[
+            'grid items-center gap-3 border-b bg-muted/20 px-3 py-2 text-[11px] font-medium text-muted-foreground',
+            showSelection
+              ? 'grid-cols-[28px_minmax(220px,1.8fr)_minmax(180px,1.4fr)_110px_100px_110px_80px]'
+              : 'grid-cols-[minmax(220px,1.8fr)_minmax(180px,1.4fr)_110px_100px_110px_80px]',
+          ].join(' ')}
           role="row"
         >
           {table.getHeaderGroups().map(headerGroup =>
@@ -565,7 +640,10 @@ export function TransferTable({
                     role="row"
                     onClick={e => handleRowClick(row.id, row.index, e)}
                     className={[
-                      'group grid cursor-default grid-cols-[minmax(220px,1.8fr)_minmax(180px,1.4fr)_110px_100px_110px_80px] items-center gap-3 px-3 py-2 text-sm',
+                      'group grid cursor-default items-center gap-3 px-3 py-1.5 text-sm',
+                      showSelection
+                        ? 'grid-cols-[28px_minmax(220px,1.8fr)_minmax(180px,1.4fr)_110px_100px_110px_80px]'
+                        : 'grid-cols-[minmax(220px,1.8fr)_minmax(180px,1.4fr)_110px_100px_110px_80px]',
                       row.index % 2 === 0 ? 'bg-background' : 'bg-muted/10',
                       row.getIsSelected()
                         ? 'bg-primary/12 outline outline-1 outline-primary/40'
@@ -644,18 +722,26 @@ export function TransferTable({
                             role="row"
                             onClick={event => {
                               event.stopPropagation()
-                              setRowSelection({ [item.id]: true })
+                              setRowSelection(prev =>
+                                prev[item.id]
+                                  ? prev
+                                  : { ...prev, [item.id]: true }
+                              )
                               lastIndexRef.current = row.index
                             }}
                             className={[
-                              'grid grid-cols-[minmax(220px,1.8fr)_minmax(180px,1.4fr)_110px_100px_110px_80px] items-center gap-3 px-3 py-2 text-xs',
+                              'grid items-center gap-3 px-3 py-1.5 text-xs',
+                              showSelection
+                                ? 'grid-cols-[28px_minmax(220px,1.8fr)_minmax(180px,1.4fr)_110px_100px_110px_80px]'
+                                : 'grid-cols-[minmax(220px,1.8fr)_minmax(180px,1.4fr)_110px_100px_110px_80px]',
                               index % 2 === 0 ? 'bg-muted/5' : 'bg-muted/10',
                             ].join(' ')}
                           >
+                            {showSelection ? <div role="cell" /> : null}
                             <div role="cell" className="min-w-0">
                               <div className="flex min-w-0 items-center gap-2 pl-7 text-muted-foreground">
                                 <FileIcon className="size-3.5 shrink-0" />
-                                <div className="truncate">
+                                <div className="text-[12px] leading-4 font-mono tracking-tight break-words whitespace-normal">
                                   {getPathName(filePath)}
                                 </div>
                               </div>
@@ -707,8 +793,14 @@ export function TransferTable({
                     ) : (
                       <div
                         role="row"
-                        className="grid grid-cols-[minmax(220px,1.8fr)_minmax(180px,1.4fr)_110px_100px_110px_80px] items-center gap-3 px-3 py-2 text-xs text-muted-foreground"
+                        className={[
+                          'grid items-center gap-3 px-3 py-2 text-xs text-muted-foreground',
+                          showSelection
+                            ? 'grid-cols-[28px_minmax(220px,1.8fr)_minmax(180px,1.4fr)_110px_100px_110px_80px]'
+                            : 'grid-cols-[minmax(220px,1.8fr)_minmax(180px,1.4fr)_110px_100px_110px_80px]',
+                        ].join(' ')}
                       >
+                        {showSelection ? <div role="cell" /> : null}
                         <div role="cell" className="min-w-0">
                           <div className="pl-7">Waiting for file progress…</div>
                         </div>

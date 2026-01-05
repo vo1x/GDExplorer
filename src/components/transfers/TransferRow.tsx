@@ -110,7 +110,9 @@ export const TransferRow = memo(function TransferRow({
           ) : (
             <FileIcon className="size-4 shrink-0 text-muted-foreground" />
           )}
-          <div className="truncate font-medium">{item.name}</div>
+          <div className="text-[12.5px] font-medium font-mono tracking-tight break-words whitespace-normal">
+            {item.name}
+          </div>
         </div>
       </div>
 
