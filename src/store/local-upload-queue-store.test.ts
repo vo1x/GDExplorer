@@ -12,18 +12,18 @@ describe('localUploadQueue', () => {
 
     const items = useLocalUploadQueue.getState().items
     expect(items).toHaveLength(2)
+    if (!items[0]) throw new Error('Missing first item')
+    if (!items[1]) throw new Error('Missing second item')
     expect(items[0]).toMatchObject({
       path: '/tmp/a.txt',
       kind: 'file',
     })
-    expect(items[0]).toBeDefined()
-    expect(items[0]!.id).toEqual(expect.any(String))
+    expect(items[0].id).toEqual(expect.any(String))
     expect(items[1]).toMatchObject({
       path: '/tmp/folder',
       kind: 'folder',
     })
-    expect(items[1]).toBeDefined()
-    expect(items[1]!.id).toEqual(expect.any(String))
+    expect(items[1].id).toEqual(expect.any(String))
   })
 
   it('deduplicates by path', () => {
