@@ -13,15 +13,15 @@ describe('localUploadQueue', () => {
     const items = useLocalUploadQueue.getState().items
     expect(items).toHaveLength(2)
     expect(items[0]).toMatchObject({
-      id: '/tmp/a.txt',
       path: '/tmp/a.txt',
       kind: 'file',
     })
+    expect(items[0].id).toEqual(expect.any(String))
     expect(items[1]).toMatchObject({
-      id: '/tmp/folder',
       path: '/tmp/folder',
       kind: 'folder',
     })
+    expect(items[1].id).toEqual(expect.any(String))
   })
 
   it('deduplicates by path', () => {

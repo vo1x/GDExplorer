@@ -38,6 +38,13 @@ interface LocalUploadQueueState {
   clear: () => void
 }
 
+let uploadIdCounter = 0
+
+function createUploadItemId(path: string): string {
+  uploadIdCounter += 1
+  return `${path}::${Date.now()}::${uploadIdCounter}`
+}
+
 function addUniqueItems(
   existing: LocalUploadItem[],
   incoming: Pick<LocalUploadItem, 'path' | 'kind'>[]
@@ -51,7 +58,7 @@ function addUniqueItems(
     if (existingPaths.has(path)) continue
     existingPaths.add(path)
     newItems.push({
-      id: path,
+      id: createUploadItemId(path),
       path,
       kind,
       addedAt: Date.now(),
