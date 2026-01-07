@@ -47,6 +47,15 @@ function getPathName(path: string): string {
   return parts[parts.length - 1] || normalized
 }
 
+function getRelativePath(basePath: string, filePath: string): string {
+  const normalizedBase = basePath.replace(/[/\\]+$/g, '')
+  if (filePath.startsWith(normalizedBase)) {
+    const trimmed = filePath.slice(normalizedBase.length)
+    return trimmed.replace(/^[/\\]+/, '') || getPathName(filePath)
+  }
+  return filePath
+}
+
 type UploadRuntimeStatus =
   | 'queued'
   | 'preparing'
@@ -663,7 +672,7 @@ export function TransferTable({
                               <div className="flex min-w-0 items-center gap-2 pl-7 text-muted-foreground">
                                 <FileIcon className="size-3.5 shrink-0" />
                                 <div className="truncate">
-                                  {getPathName(filePath)}
+                                  {getRelativePath(item.path, filePath)}
                                 </div>
                               </div>
                             </div>
