@@ -16,12 +16,14 @@ describe('localUploadQueue', () => {
       path: '/tmp/a.txt',
       kind: 'file',
     })
-    expect(items[0].id).toEqual(expect.any(String))
+    expect(items[0]).toBeDefined()
+    expect(items[0]!.id).toEqual(expect.any(String))
     expect(items[1]).toMatchObject({
       path: '/tmp/folder',
       kind: 'folder',
     })
-    expect(items[1].id).toEqual(expect.any(String))
+    expect(items[1]).toBeDefined()
+    expect(items[1]!.id).toEqual(expect.any(String))
   })
 
   it('deduplicates by path', () => {
