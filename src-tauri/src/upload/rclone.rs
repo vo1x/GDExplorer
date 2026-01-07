@@ -491,10 +491,7 @@ async fn emit_file_progress(
 fn extract_error_message(line: &str) -> Option<String> {
     if line.trim_start().starts_with('{') {
         if let Ok(value) = serde_json::from_str::<Value>(line) {
-            let level = value
-                .get("level")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let level = value.get("level").and_then(|v| v.as_str()).unwrap_or("");
             if level.eq_ignore_ascii_case("error") {
                 if let Some(msg) = value.get("msg").and_then(|v| v.as_str()) {
                     return Some(msg.to_string());
