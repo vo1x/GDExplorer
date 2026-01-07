@@ -21,6 +21,7 @@ pub struct QueueItemInput {
     pub id: String,
     pub path: String,
     pub kind: String,
+    pub dest_path: Option<String>,
 }
 
 pub async fn wait_if_paused(control: &UploadControlHandle, item_id: &str) -> Result<(), String> {

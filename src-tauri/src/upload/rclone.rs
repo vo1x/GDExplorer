@@ -5,7 +5,7 @@ use crate::upload::events::{
 use crate::upload::scheduler::{wait_if_paused, QueueItemInput, UploadControlHandle};
 use regex::Regex;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -180,6 +180,9 @@ pub async fn run_rclone_job(
     Ok(())
 }
 
+const MAX_SA_ATTEMPTS: usize = 5;
+const RETRY_BACKOFF_MS: u64 = 1200;
+
 #[allow(clippy::too_many_arguments)]
 async fn run_rclone_for_item(
     app: &AppHandle,
@@ -225,18 +228,53 @@ async fn run_rclone_for_item(
 
     wait_if_paused(control, &item.id).await?;
 
-    let (sa_path, sa_email) = select_service_account(sa_pool, sa_tick).await?;
+    let max_attempts = {
+        let guard = sa_pool.lock().await;
+        guard.len().min(MAX_SA_ATTEMPTS).max(1)
+    };
+    let mut attempts = 0_usize;
+    let mut tried: HashSet<PathBuf> = HashSet::new();
 
-    run_rclone_command(
-        app,
-        control,
-        prefs,
-        &sa_path,
-        sa_email,
-        destination_folder_id,
-        item,
-    )
-    .await
+    loop {
+        attempts += 1;
+        let (sa_path, sa_email) =
+            select_service_account_excluding(sa_pool, sa_tick, &tried).await?;
+        tried.insert(sa_path.clone());
+
+        let result = run_rclone_command(
+            app,
+            control,
+            prefs,
+            &sa_path,
+            sa_email,
+            destination_folder_id,
+            item,
+        )
+        .await;
+
+        match result {
+            Ok(()) => return Ok(()),
+            Err(err) => {
+                let retryable = is_retryable_error(&err);
+                log::warn!(
+                    target: "rclone",
+                    "upload.attempt_failed id={} attempt={}/{} retryable={} error={}",
+                    item.id,
+                    attempts,
+                    max_attempts,
+                    retryable,
+                    err
+                );
+                if !retryable || attempts >= max_attempts {
+                    return Err(err);
+                }
+                tokio::time::sleep(Duration::from_millis(
+                    RETRY_BACKOFF_MS.saturating_mul(attempts as u64),
+                ))
+                .await;
+            }
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -337,9 +375,13 @@ async fn run_rclone_command(
     let mut last_bytes = 0_u64;
     let mut last_total = 0_u64;
     let mut last_file_progress: HashMap<String, (u64, u64)> = HashMap::new();
+    let mut last_error: Option<String> = None;
 
     while let Some(line) = line_rx.recv().await {
         log::debug!(target: "rclone", "{}", line);
+        if let Some(msg) = extract_error_message(&line) {
+            last_error = Some(msg);
+        }
         if let Some(entries) = parse_json_file_progress(&line) {
             for (file_path, bytes, total) in entries {
                 let should_emit = match last_file_progress.get(&file_path) {
@@ -405,7 +447,8 @@ async fn run_rclone_command(
         status
     );
 
-    Err(format!("Rclone failed with status: {status}"))
+    let message = last_error.unwrap_or_else(|| format!("Rclone failed with status: {status}"));
+    Err(message)
 }
 
 async fn emit_progress(app: &AppHandle, item: &QueueItemInput, bytes: u64, total: u64) {
@@ -443,6 +486,45 @@ async fn emit_file_progress(
             total_bytes: total,
         },
     );
+}
+
+fn extract_error_message(line: &str) -> Option<String> {
+    if line.trim_start().starts_with('{') {
+        if let Ok(value) = serde_json::from_str::<Value>(line) {
+            let level = value
+                .get("level")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if level.eq_ignore_ascii_case("error") {
+                if let Some(msg) = value.get("msg").and_then(|v| v.as_str()) {
+                    return Some(msg.to_string());
+                }
+                if let Some(err) = value.get("error").and_then(|v| v.as_str()) {
+                    return Some(err.to_string());
+                }
+            }
+        }
+    }
+
+    if line.contains("ERROR") || line.contains("error") {
+        return Some(line.to_string());
+    }
+
+    None
+}
+
+fn is_retryable_error(message: &str) -> bool {
+    let msg = message.to_ascii_lowercase();
+    msg.contains("ratelimit")
+        || msg.contains("rate limit")
+        || msg.contains("userratelimitexceeded")
+        || msg.contains("dailylimitexceeded")
+        || msg.contains("quotaexceeded")
+        || msg.contains("storagequotaexceeded")
+        || msg.contains("backend rate limit")
+        || msg.contains("too many requests")
+        || msg.contains("http 429")
+        || msg.contains("http 403")
 }
 
 async fn monitor_pause_state(
@@ -544,7 +626,9 @@ fn build_rclone_args(
         format!(
             "{}:{}",
             prefs.remote_name,
-            if item.kind == "folder" {
+            if let Some(dest_path) = item.dest_path.as_ref() {
+                dest_path.clone()
+            } else if item.kind == "folder" {
                 Path::new(&item.path)
                     .file_name()
                     .and_then(|n| n.to_str())
@@ -641,6 +725,39 @@ async fn select_service_account(
             best_used = entry.last_used;
         }
     }
+
+    let next = tick.fetch_add(1, Ordering::Relaxed) + 1;
+    guard[best_idx].last_used = next;
+
+    let entry = &guard[best_idx];
+    Ok((entry.path.clone(), entry.email.clone()))
+}
+
+async fn select_service_account_excluding(
+    pool: &Arc<Mutex<Vec<ServiceAccountFile>>>,
+    tick: &Arc<AtomicU64>,
+    exclude: &HashSet<PathBuf>,
+) -> Result<(PathBuf, Option<String>), String> {
+    let mut guard = pool.lock().await;
+    if guard.is_empty() {
+        return Err("No service account JSON files available.".to_string());
+    }
+
+    let mut best_idx: Option<usize> = None;
+    let mut best_used = u64::MAX;
+    for (idx, entry) in guard.iter().enumerate() {
+        if exclude.contains(&entry.path) {
+            continue;
+        }
+        if entry.last_used < best_used {
+            best_idx = Some(idx);
+            best_used = entry.last_used;
+        }
+    }
+
+    let Some(best_idx) = best_idx else {
+        return Err("No unused service account JSON files available.".to_string());
+    };
 
     let next = tick.fetch_add(1, Ordering::Relaxed) + 1;
     guard[best_idx].last_used = next;

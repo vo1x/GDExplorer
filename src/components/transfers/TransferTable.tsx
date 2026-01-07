@@ -8,6 +8,8 @@ import {
 } from 'react'
 import { Button } from '@/components/ui/button'
 import { invoke } from '@tauri-apps/api/core'
+import { appLogDir, join } from '@tauri-apps/api/path'
+import { openPath } from '@tauri-apps/plugin-opener'
 import {
   flexRender,
   getCoreRowModel,
@@ -40,6 +42,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { toast } from 'sonner'
+import { logger } from '@/lib/logger'
 
 function getPathName(path: string): string {
   const normalized = path.replace(/[/\\]+$/g, '')
@@ -99,6 +103,8 @@ export function TransferTable({
   const clear = useLocalUploadQueue(s => s.clear)
   const [clearDialogOpen, setClearDialogOpen] = useState(false)
   const [clearPending, setClearPending] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deletePending, setDeletePending] = useState(false)
 
   const clearRemoved = useTransferUiStore(s => s.clearRemoved)
   const tick = useTransferUiStore(s => s.tick)
@@ -147,11 +153,15 @@ export function TransferTable({
             ? Math.min(99.9, rawPct)
             : Math.min(99.9, rawPct)
 
+      const isFinalizing =
+        progressState === 'uploading' && total > 0 && sent >= total
       const statusLabel =
         runtime === 'preparing'
           ? 'Preparing'
           : progressState === 'uploading'
-            ? 'Uploading'
+            ? isFinalizing
+              ? 'Finalizing'
+              : 'Uploading'
             : progressState === 'paused'
               ? 'Paused'
               : progressState === 'completed'
@@ -167,9 +177,14 @@ export function TransferTable({
             ? '0 B/s'
             : '—'
 
+      const remaining = Math.max(0, total - Math.min(sent, total))
+      const etaSeconds =
+        progressState === 'uploading' && (rowMetrics?.speedBytesPerSec ?? 0) > 0
+          ? Math.round(remaining / (rowMetrics?.speedBytesPerSec ?? 0))
+          : null
       const etaLabel =
         progressState === 'uploading'
-          ? formatEta(rowMetrics?.etaSeconds ?? null)
+          ? formatEta(etaSeconds)
           : progressState === 'paused'
             ? '∞'
             : '—'
@@ -215,11 +230,12 @@ export function TransferTable({
   }, [items, tick])
 
   const hasAny = items.length > 0
-  const hasCompleted = items.some(i => i.status === 'done')
+  const hasCompleted = rows.some(row => row.status === 'done')
 
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const lastIndexRef = useRef<number | null>(null)
   const [expandedById, setExpandedById] = useState<Record<string, boolean>>({})
+  const [logsPending, setLogsPending] = useState(false)
 
   useEffect(() => {
     const valid = new Set(items.map(i => i.id))
@@ -265,19 +281,18 @@ export function TransferTable({
                   type="button"
                   onClick={event => {
                     event.stopPropagation()
-                    setRowSelection({ [item.id]: true })
-                    lastIndexRef.current = row.index
                     if (!listRequestRef.current[item.id]) {
-                      listRequestRef.current[item.id] = true
                       const shouldFetch =
                         item.kind === 'folder' &&
                         (fileOrderById[item.id]?.length ?? 0) === 0
                       if (shouldFetch) {
+                        listRequestRef.current[item.id] = true
                         invoke<{ filePath: string; totalBytes: number }[]>(
                           'list_item_files',
                           { path: item.path, kind: 'folder' }
                         )
                           .then(files => {
+                            if (files.length === 0) return
                             recordFileList(
                               item.id,
                               files.map(file => ({
@@ -413,6 +428,19 @@ export function TransferTable({
     [rowSelection]
   )
 
+  const handleDeleteSelected = () => {
+    if (selectedIds.length === 0) return
+    const selectedPaths = new Set(
+      items
+        .filter(item => selectedIds.includes(item.id))
+        .map(item => item.path)
+    )
+    for (const path of selectedPaths) {
+      useLocalUploadQueue.getState().remove(path)
+    }
+    setRowSelection({})
+  }
+
   const handleRowClick = (rowId: string, rowIndex: number, e: MouseEvent) => {
     const isToggle = e.metaKey || e.ctrlKey
     const isRange = e.shiftKey
@@ -437,6 +465,27 @@ export function TransferTable({
     }
 
     setRowSelection({ [rowId]: true })
+  }
+  const handleBackgroundClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.target instanceof Element) {
+      if (event.target.closest('[data-row]')) return
+    }
+    setRowSelection({})
+  }
+
+  const handleOpenLogs = async () => {
+    if (logsPending) return
+    setLogsPending(true)
+    try {
+      const dir = await appLogDir()
+      const logPath = await join(dir, 'gdexplorer.log.txt')
+      await openPath(logPath)
+    } catch (error) {
+      logger.warn('Failed to open log file', { error: String(error) })
+      toast.error('Failed to open log file')
+    } finally {
+      setLogsPending(false)
+    }
   }
 
   return (
@@ -481,10 +530,19 @@ export function TransferTable({
             type="button"
             variant="secondary"
             size="sm"
+            onClick={() => setDeleteDialogOpen(true)}
+            disabled={selectedIds.length === 0}
+          >
+            Delete
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
             onClick={() => {
               // UI-only: clearing completed just removes completed rows.
               // (Backend does not keep running tasks for completed items.)
-              const toRemove = items.filter(i => i.status === 'done')
+              const toRemove = rows.filter(r => r.status === 'done')
               for (const it of toRemove) {
                 // Remove by path via store method; import lazily to avoid extra selector.
                 useLocalUploadQueue.getState().remove(it.path)
@@ -503,8 +561,50 @@ export function TransferTable({
           >
             Clear all
           </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleOpenLogs}
+            disabled={logsPending}
+          >
+            Open logs
+          </Button>
         </div>
       </div>
+
+      <AlertDialog
+        open={deleteDialogOpen}
+        onOpenChange={open => !deletePending && setDeleteDialogOpen(open)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete selected transfers?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the selected items from the queue.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletePending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deletePending}
+              onClick={() => {
+                setDeletePending(true)
+                try {
+                  handleDeleteSelected()
+                } finally {
+                  setDeletePending(false)
+                  setDeleteDialogOpen(false)
+                }
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={clearDialogOpen}
@@ -567,7 +667,7 @@ export function TransferTable({
         </div>
 
         {rows.length > 0 ? (
-          <div role="rowgroup">
+          <div role="rowgroup" onClick={handleBackgroundClick}>
             {table.getRowModel().rows.map(row => {
               const item = row.original
               const isExpanded = Boolean(expandedById[item.id])
@@ -587,6 +687,7 @@ export function TransferTable({
                         ? 'bg-primary/12 outline outline-1 outline-primary/40'
                         : '',
                     ].join(' ')}
+                    data-row="parent"
                   >
                     {row.getVisibleCells().map(cell => (
                       <div key={cell.id} role="cell" className="min-w-0">
@@ -626,6 +727,10 @@ export function TransferTable({
                                   : parentState === 'uploading'
                                     ? 'uploading'
                                     : 'queued'
+                        const isFinalizing =
+                          progressState === 'uploading' &&
+                          total > 0 &&
+                          sent >= total
                         const statusLabel =
                           progressState === 'failed'
                             ? 'Failed'
@@ -634,7 +739,9 @@ export function TransferTable({
                               : progressState === 'completed'
                                 ? 'Completed'
                                 : progressState === 'uploading'
-                                  ? 'Uploading'
+                                  ? isFinalizing
+                                    ? 'Finalizing'
+                                    : 'Uploading'
                                   : 'Queued'
                         const sizeLabel = total > 0 ? formatBytes(total) : '—'
                         const speedValue =
@@ -645,8 +752,14 @@ export function TransferTable({
                             : progressState === 'paused'
                               ? '0 B/s'
                               : '—'
+                        const remainingChild = Math.max(
+                          0,
+                          total - Math.min(sent, total)
+                        )
                         const etaValue =
-                          fileMetrics[filePath]?.etaSeconds ?? null
+                          speedValue > 0
+                            ? Math.round(remainingChild / speedValue)
+                            : null
                         const etaLabel =
                           progressState === 'uploading'
                             ? formatEta(etaValue)
@@ -658,15 +771,12 @@ export function TransferTable({
                           <div
                             key={`${item.id}:${filePath}`}
                             role="row"
-                            onClick={event => {
-                              event.stopPropagation()
-                              setRowSelection({ [item.id]: true })
-                              lastIndexRef.current = row.index
-                            }}
+                            onClick={event => event.stopPropagation()}
                             className={[
                               'grid grid-cols-[minmax(220px,1.8fr)_minmax(180px,1.4fr)_110px_100px_110px_80px] items-center gap-3 px-3 py-2 text-xs',
                               index % 2 === 0 ? 'bg-muted/5' : 'bg-muted/10',
                             ].join(' ')}
+                            data-row="child"
                           >
                             <div role="cell" className="min-w-0">
                               <div className="flex min-w-0 items-center gap-2 pl-7 text-muted-foreground">

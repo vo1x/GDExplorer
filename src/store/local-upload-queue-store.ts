@@ -144,7 +144,6 @@ export const useLocalUploadQueue = create<LocalUploadQueueState>()(
               status: 'queued',
               message: null,
               bytesSent: undefined,
-              totalBytes: undefined,
               saEmail: null,
             })),
           }),
@@ -165,7 +164,6 @@ export const useLocalUploadQueue = create<LocalUploadQueueState>()(
                       status: 'queued',
                       message: null,
                       bytesSent: undefined,
-                      totalBytes: undefined,
                       saEmail: null,
                     }
                   : item

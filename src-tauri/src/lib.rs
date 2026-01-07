@@ -811,7 +811,7 @@ pub fn run() {
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
                     // Log to a file in the app log directory
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
-                        file_name: Some("gdexplorer.log"),
+                        file_name: Some("gdexplorer.log.txt".to_string()),
                     }),
                 ])
                 .build(),

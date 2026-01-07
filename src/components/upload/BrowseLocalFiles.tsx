@@ -248,7 +248,7 @@ export function BrowseLocalFiles() {
 
     const selected = items.filter(i => selectedIds.includes(i.id))
     const startable = selected.filter(
-      i => i.status === 'queued' || i.status === 'paused' || !i.status
+      i => i.status !== 'uploading' && i.status !== 'preparing'
     )
 
     if (isUploading) {
@@ -261,7 +261,7 @@ export function BrowseLocalFiles() {
         })
         return
       }
-      invoke('pause_items', { itemIds: toResume, paused: false }).catch(err => {
+      invoke('pause_items', { args: { itemIds: toResume, paused: false } }).catch(err => {
         logger.debug('pause_items resume failed', { error: String(err) })
       })
       for (const id of toResume) {
@@ -288,11 +288,13 @@ export function BrowseLocalFiles() {
     try {
       await invoke('start_upload', {
         args: {
-          queueItems: startable.map(item => ({
-            id: item.id,
-            path: item.path,
-            kind: item.kind,
-          })),
+          queueItems: startable.map(item => {
+            return {
+              id: item.id,
+              path: item.path,
+              kind: item.kind,
+            }
+          }),
           destinationFolderId,
         },
       })
@@ -314,7 +316,7 @@ export function BrowseLocalFiles() {
 
     if (toPause.length === 0) return
 
-    invoke('pause_items', { itemIds: toPause, paused: true }).catch(err => {
+    invoke('pause_items', { args: { itemIds: toPause, paused: true } }).catch(err => {
       logger.debug('pause_items pause failed', { error: String(err) })
     })
     for (const id of toPause) {
