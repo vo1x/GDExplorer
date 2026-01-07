@@ -230,7 +230,7 @@ async fn run_rclone_for_item(
 
     let max_attempts = {
         let guard = sa_pool.lock().await;
-        guard.len().min(MAX_SA_ATTEMPTS).max(1)
+        guard.len().clamp(1, MAX_SA_ATTEMPTS)
     };
     let mut attempts = 0_usize;
     let mut tried: HashSet<PathBuf> = HashSet::new();
@@ -703,31 +703,6 @@ fn read_service_account_email(path: &Path) -> Result<Option<String>, String> {
         .map_err(|e| format!("Invalid service account JSON: {e}"))?;
 
     Ok(parsed.client_email)
-}
-
-async fn select_service_account(
-    pool: &Arc<Mutex<Vec<ServiceAccountFile>>>,
-    tick: &Arc<AtomicU64>,
-) -> Result<(PathBuf, Option<String>), String> {
-    let mut guard = pool.lock().await;
-    if guard.is_empty() {
-        return Err("No service account JSON files available.".to_string());
-    }
-
-    let mut best_idx = 0;
-    let mut best_used = guard[0].last_used;
-    for (idx, entry) in guard.iter().enumerate().skip(1) {
-        if entry.last_used < best_used {
-            best_idx = idx;
-            best_used = entry.last_used;
-        }
-    }
-
-    let next = tick.fetch_add(1, Ordering::Relaxed) + 1;
-    guard[best_idx].last_used = next;
-
-    let entry = &guard[best_idx];
-    Ok((entry.path.clone(), entry.email.clone()))
 }
 
 async fn select_service_account_excluding(
