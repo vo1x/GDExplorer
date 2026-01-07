@@ -431,9 +431,7 @@ export function TransferTable({
   const handleDeleteSelected = () => {
     if (selectedIds.length === 0) return
     const selectedPaths = new Set(
-      items
-        .filter(item => selectedIds.includes(item.id))
-        .map(item => item.path)
+      items.filter(item => selectedIds.includes(item.id)).map(item => item.path)
     )
     for (const path of selectedPaths) {
       useLocalUploadQueue.getState().remove(path)
