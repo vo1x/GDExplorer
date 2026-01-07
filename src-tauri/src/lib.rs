@@ -809,10 +809,9 @@ pub fn run() {
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
                     // Log to webview console for development
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
-                    // Log to system logs on macOS (appears in Console.app)
-                    #[cfg(target_os = "macos")]
+                    // Log to a file in the app log directory
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
-                        file_name: None,
+                        file_name: Some("gdexplorer.log"),
                     }),
                 ])
                 .build(),

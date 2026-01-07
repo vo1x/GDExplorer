@@ -64,6 +64,7 @@ interface TransferRowData {
   totalBytes: number | null
   bytesSent: number | null
   error: string | null
+  saEmail: string | null
   progressPct: number
   progressState: TransferState
   statusLabel: string
@@ -175,6 +176,7 @@ export function TransferTable({
         totalBytes: item.totalBytes ?? null,
         bytesSent: item.bytesSent ?? null,
         error: item.message ?? null,
+        saEmail: item.saEmail ?? null,
         progressPct,
         progressState,
         statusLabel,
@@ -337,7 +339,7 @@ export function TransferTable({
                     : 'text-muted-foreground'
 
           return (
-            <div className={['flex items-center gap-1 text-xs', cls].join(' ')}>
+            <div className={['flex flex-col gap-0.5 text-xs', cls].join(' ')}>
               {item.progressState === 'failed' && item.error ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -353,6 +355,11 @@ export function TransferTable({
               ) : (
                 <span>{item.statusLabel}</span>
               )}
+              {item.saEmail ? (
+                <span className="text-[10px] text-muted-foreground">
+                  {item.saEmail}
+                </span>
+              ) : null}
             </div>
           )
         },

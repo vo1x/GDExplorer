@@ -111,7 +111,14 @@ export const useLocalUploadQueue = create<LocalUploadQueueState>()(
         set(
           state => ({
             items: state.items.map(item =>
-              item.id === itemId ? { ...item, status, message, saEmail } : item
+              item.id === itemId
+                ? {
+                    ...item,
+                    status,
+                    message,
+                    saEmail: saEmail ?? item.saEmail ?? null,
+                  }
+                : item
             ),
           }),
           undefined,
