@@ -39,8 +39,7 @@ import {
   Trash2,
   Pause,
   BrushCleaning,
-  UploadCloud
-  
+  UploadCloud,
 } from 'lucide-react'
 import {
   Tooltip,
@@ -49,7 +48,6 @@ import {
 } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { logger } from '@/lib/logger'
-
 
 function getPathName(path: string): string {
   const normalized = path.replace(/[/\\]+$/g, '')
@@ -510,18 +508,16 @@ export function TransferTable({
             type="button"
             variant="default"
             size="sm"
-            
             onClick={() => onStartSelected(selectedIds)}
             disabled={selectedIds.length === 0}
-            className='bg-[#39B549] text-white '
+            className="bg-[#39B549] text-white "
           >
-            <UploadCloud /> 
+            <UploadCloud />
           </Button>
           <Button
             type="button"
             variant="secondary"
-            className='bg-yellow-500'
-            
+            className="bg-yellow-500"
             size="sm"
             onClick={() => onPauseSelected(selectedIds)}
             disabled={selectedIds.length === 0 || !isUploading}
@@ -533,9 +529,9 @@ export function TransferTable({
                   : 'Nothing is uploading'
             }
           >
-            <Pause fill='#fff'/>
+            <Pause fill="#fff" />
           </Button>
-          
+
           <Button
             type="button"
             variant="secondary"
@@ -551,7 +547,7 @@ export function TransferTable({
             }}
             disabled={!hasCompleted}
           >
-            <BrushCleaning/>
+            <BrushCleaning />
           </Button>
           <Button
             type="button"
@@ -610,7 +606,7 @@ export function TransferTable({
                 }
               }}
             >
-                Delete
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

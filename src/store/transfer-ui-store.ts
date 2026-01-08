@@ -124,8 +124,7 @@ export const useTransferUiStore = create<TransferUiState>((set, get) => ({
       nextByItem[resolvedKey] = {
         bytesSent,
         totalBytes,
-        saEmail:
-          saEmail ?? existingByItem?.[resolvedKey]?.saEmail ?? null,
+        saEmail: saEmail ?? existingByItem?.[resolvedKey]?.saEmail ?? null,
       }
 
       const nextOrder = isNewFile

@@ -57,7 +57,10 @@ impl FolderProgressTracker {
     }
 
     fn update(&mut self, file_key: &str, bytes: u64) -> (u64, u64) {
-        let prev = self.by_file.insert(file_key.to_string(), bytes).unwrap_or(0);
+        let prev = self
+            .by_file
+            .insert(file_key.to_string(), bytes)
+            .unwrap_or(0);
         if bytes >= prev {
             self.current_bytes = self.current_bytes.saturating_add(bytes - prev);
         } else {
@@ -632,15 +635,7 @@ async fn run_rclone_command(
                 };
                 if should_emit {
                     last_file_progress.insert(file_path.clone(), (bytes, total));
-                    emit_file_progress(
-                        app,
-                        item,
-                        &file_path,
-                        bytes,
-                        total,
-                        sa_email.clone(),
-                    )
-                    .await;
+                    emit_file_progress(app, item, &file_path, bytes, total, sa_email.clone()).await;
                 }
             }
         }
@@ -808,15 +803,7 @@ async fn run_rclone_for_file(
     let mut last_total = 0_u64;
     let mut last_error: Option<String> = None;
 
-    emit_file_progress(
-        app,
-        item,
-        &file_path_string,
-        0,
-        file_size,
-        sa_email.clone(),
-    )
-    .await;
+    emit_file_progress(app, item, &file_path_string, 0, file_size, sa_email.clone()).await;
     let (total_sent, total_size) = {
         let mut guard = progress_tracker.lock().await;
         guard.update(&file_path_string, 0)
@@ -839,15 +826,8 @@ async fn run_rclone_for_file(
             if bytes != last_bytes || total != last_total {
                 last_bytes = bytes;
                 last_total = total;
-                emit_file_progress(
-                    app,
-                    item,
-                    &file_path_string,
-                    bytes,
-                    total,
-                    sa_email.clone(),
-                )
-                .await;
+                emit_file_progress(app, item, &file_path_string, bytes, total, sa_email.clone())
+                    .await;
                 let (total_sent, total_size) = {
                     let mut guard = progress_tracker.lock().await;
                     guard.update(&file_path_string, bytes)
