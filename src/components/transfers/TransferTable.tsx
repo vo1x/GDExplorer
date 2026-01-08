@@ -36,10 +36,11 @@ import {
   AlertTriangleIcon,
   ChevronRightIcon,
   ChevronDownIcon,
+  FolderOpen,
   Trash2,
   Pause,
   BrushCleaning,
-  UploadCloud,
+  Play,
 } from 'lucide-react'
 import {
   Tooltip,
@@ -494,30 +495,21 @@ export function TransferTable({
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       <div className="flex items-center justify-between gap-3">
-        <div className="text-sm font-medium">Transfers</div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
             variant="secondary"
-            size="sm"
-            onClick={onBrowse}
-          >
-            Browse…
-          </Button>
-          <Button
-            type="button"
-            variant="default"
             size="sm"
             onClick={() => onStartSelected(selectedIds)}
             disabled={selectedIds.length === 0}
-            className="bg-[#39B549] text-white "
+            className="gap-2 bg-emerald-500/90 text-[#DCFCE7]  hover:bg-emerald-500 disabled:bg-emerald-500/40"
           >
-            <UploadCloud />
+            <Play className="size-4" fill='#DCFCE7' />
+            Upload
           </Button>
           <Button
             type="button"
             variant="secondary"
-            className="bg-yellow-500"
             size="sm"
             onClick={() => onPauseSelected(selectedIds)}
             disabled={selectedIds.length === 0 || !isUploading}
@@ -528,8 +520,10 @@ export function TransferTable({
                   ? undefined
                   : 'Nothing is uploading'
             }
+            className="gap-2 bg-amber-400/90 text-[#FDE68A] hover:bg-amber-400 disabled:bg-amber-400/40"
           >
-            <Pause fill="#fff" />
+            <Pause className="size-4" fill='#FDE68A'/>
+            Pause
           </Button>
 
           <Button
@@ -546,8 +540,10 @@ export function TransferTable({
               }
             }}
             disabled={!hasCompleted}
+            className="gap-2 bg-slate-700/70 text-slate-100 hover:bg-slate-700 disabled:bg-slate-700/40"
           >
-            <BrushCleaning />
+            <BrushCleaning className="size-4" />
+            Clear completed
           </Button>
           <Button
             type="button"
@@ -555,8 +551,10 @@ export function TransferTable({
             size="sm"
             onClick={() => setDeleteDialogOpen(true)}
             disabled={selectedIds.length === 0}
+            className="gap-2 text-[#FEE2E2]"
           >
-            <Trash2 />
+            <Trash2 className="size-4"  />
+            Delete
           </Button>
           {/* <Button
             type="button"
@@ -870,8 +868,14 @@ export function TransferTable({
             <div className="text-sm text-muted-foreground">
               or click Browse…
             </div>
-            <Button type="button" onClick={onBrowse}>
-              Browse…
+            <Button
+              type="button"
+              onClick={onBrowse}
+              className="gap-2 border-slate-500/30 bg-slate-900/40 text-slate-100 hover:bg-slate-900/70"
+              variant="outline"
+            >
+              <FolderOpen className="size-4" />
+              Browse
             </Button>
           </div>
         )}
