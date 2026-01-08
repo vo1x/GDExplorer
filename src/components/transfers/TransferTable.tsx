@@ -38,7 +38,6 @@ import {
   ChevronDownIcon,
   Trash2,
   Pause,
-  Play,
   BrushCleaning,
   UploadCloud
   
@@ -236,7 +235,6 @@ export function TransferTable({
     return () => clearInterval(interval)
   }, [items, tick])
 
-  const hasAny = items.length > 0
   const hasCompleted = rows.some(row => row.status === 'done')
 
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})

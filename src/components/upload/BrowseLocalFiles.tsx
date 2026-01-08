@@ -301,7 +301,6 @@ export function BrowseLocalFiles() {
         },
       })
     } catch (error) {
-      setIsUploading(false)
       const message = error instanceof Error ? error.message : String(error)
       toast.error('Failed to start upload', { description: message })
     }
