@@ -380,23 +380,10 @@ async fn run_rclone_for_folder_entries(
     let (dest_root_id, dest_prefix) = if !dest_base.is_empty() {
         let (sa_path, _sa_email) =
             select_service_account_excluding(sa_pool, sa_tick, &HashSet::new()).await?;
-        let base_id = get_or_create_folder_id(
-            prefs,
-            &sa_path,
-            destination_folder_id,
-            &dest_base,
-        )
-        .await?;
+        let base_id =
+            get_or_create_folder_id(prefs, &sa_path, destination_folder_id, &dest_base).await?;
         let folder_dirs = build_rel_folder_dir_list(&entries);
-        ensure_remote_dirs(
-            control,
-            prefs,
-            &sa_path,
-            &base_id,
-            &item.id,
-            &folder_dirs,
-        )
-        .await?;
+        ensure_remote_dirs(control, prefs, &sa_path, &base_id, &item.id, &folder_dirs).await?;
         (base_id, String::new())
     } else {
         (destination_folder_id.to_string(), dest_base.clone())

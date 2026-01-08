@@ -504,7 +504,7 @@ export function TransferTable({
             disabled={selectedIds.length === 0}
             className="gap-2 bg-emerald-500/90 text-[#DCFCE7]  hover:bg-emerald-500 disabled:bg-emerald-500/40"
           >
-            <Play className="size-4" fill='#DCFCE7' />
+            <Play className="size-4" fill="#DCFCE7" />
             Upload
           </Button>
           <Button
@@ -522,7 +522,7 @@ export function TransferTable({
             }
             className="gap-2 bg-amber-400/90 text-[#FDE68A] hover:bg-amber-400 disabled:bg-amber-400/40"
           >
-            <Pause className="size-4" fill='#FDE68A'/>
+            <Pause className="size-4" fill="#FDE68A" />
             Pause
           </Button>
 
@@ -553,7 +553,7 @@ export function TransferTable({
             disabled={selectedIds.length === 0}
             className="gap-2 text-[#FEE2E2]"
           >
-            <Trash2 className="size-4"  />
+            <Trash2 className="size-4" />
             Delete
           </Button>
           {/* <Button
@@ -565,7 +565,7 @@ export function TransferTable({
           >
             Clear all
           </Button> */}
-            {/* <Button
+          {/* <Button
               type="button"
               variant="ghost"
               size="sm"
