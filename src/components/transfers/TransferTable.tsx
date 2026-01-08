@@ -565,15 +565,15 @@ export function TransferTable({
           >
             Clear all
           </Button> */}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={handleOpenLogs}
-            disabled={logsPending}
-          >
-            Open logs
-          </Button>
+            {/* <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleOpenLogs}
+              disabled={logsPending}
+            >
+              Open logs
+            </Button> */}
         </div>
       </div>
 

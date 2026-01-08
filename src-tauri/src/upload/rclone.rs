@@ -377,6 +377,31 @@ async fn run_rclone_for_folder_entries(
     }
 
     let dest_base = resolve_folder_dest_base(item);
+    let (dest_root_id, dest_prefix) = if !dest_base.is_empty() {
+        let (sa_path, _sa_email) =
+            select_service_account_excluding(sa_pool, sa_tick, &HashSet::new()).await?;
+        let base_id = get_or_create_folder_id(
+            prefs,
+            &sa_path,
+            destination_folder_id,
+            &dest_base,
+        )
+        .await?;
+        let folder_dirs = build_rel_folder_dir_list(&entries);
+        ensure_remote_dirs(
+            control,
+            prefs,
+            &sa_path,
+            &base_id,
+            &item.id,
+            &folder_dirs,
+        )
+        .await?;
+        (base_id, String::new())
+    } else {
+        (destination_folder_id.to_string(), dest_base.clone())
+    };
+
     let concurrency = max_concurrent.clamp(1, 10) as usize;
     let semaphore = Arc::new(Semaphore::new(concurrency.max(1)));
     let progress_tracker = Arc::new(Mutex::new(FolderProgressTracker::new(total_bytes)));
@@ -402,11 +427,11 @@ async fn run_rclone_for_folder_entries(
         let prefs = prefs.clone();
         let sa_pool = sa_pool.clone();
         let sa_tick = sa_tick.clone();
-        let destination_folder_id = destination_folder_id.to_string();
+        let destination_folder_id = dest_root_id.clone();
         let item = item.clone();
         let progress_tracker = progress_tracker.clone();
         let last_sa_email = last_sa_email.clone();
-        let dest_base = dest_base.clone();
+        let dest_base = dest_prefix.clone();
 
         tasks.spawn(async move {
             let _permit = permit;
@@ -1107,6 +1132,173 @@ fn build_rclone_args(
     ];
 
     args
+}
+
+fn build_rclone_mkdir_args(
+    prefs: &RclonePreferences,
+    destination_folder_id: &str,
+    dir: &str,
+    sa_path: &Path,
+) -> Vec<String> {
+    vec![
+        "mkdir".to_string(),
+        format!("{}:{}", prefs.remote_name, dir),
+        "--drive-root-folder-id".to_string(),
+        destination_folder_id.to_string(),
+        "--log-level".to_string(),
+        "INFO".to_string(),
+        "--drive-service-account-file".to_string(),
+        sa_path.to_string_lossy().to_string(),
+    ]
+}
+
+fn build_rclone_lsf_args(
+    prefs: &RclonePreferences,
+    destination_folder_id: &str,
+    sa_path: &Path,
+) -> Vec<String> {
+    vec![
+        "lsf".to_string(),
+        format!("{}:", prefs.remote_name),
+        "--dirs-only".to_string(),
+        "--format".to_string(),
+        "ip".to_string(),
+        "--separator".to_string(),
+        "\t".to_string(),
+        "--drive-root-folder-id".to_string(),
+        destination_folder_id.to_string(),
+        "--log-level".to_string(),
+        "INFO".to_string(),
+        "--drive-service-account-file".to_string(),
+        sa_path.to_string_lossy().to_string(),
+    ]
+}
+
+async fn get_or_create_folder_id(
+    prefs: &RclonePreferences,
+    sa_path: &Path,
+    destination_folder_id: &str,
+    folder_name: &str,
+) -> Result<String, String> {
+    let mut id = lookup_folder_id(prefs, sa_path, destination_folder_id, folder_name).await?;
+    if id.is_none() {
+        let args = build_rclone_mkdir_args(prefs, destination_folder_id, folder_name, sa_path);
+        let status = Command::new(&prefs.rclone_path)
+            .args(&args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .status()
+            .await
+            .map_err(|e| format!("Failed to run rclone mkdir: {e}"))?;
+        if !status.success() {
+            return Err(format!("Failed to create folder {folder_name}"));
+        }
+        id = lookup_folder_id(prefs, sa_path, destination_folder_id, folder_name).await?;
+    }
+
+    id.ok_or_else(|| format!("Failed to locate folder id for {folder_name}"))
+}
+
+async fn lookup_folder_id(
+    prefs: &RclonePreferences,
+    sa_path: &Path,
+    destination_folder_id: &str,
+    folder_name: &str,
+) -> Result<Option<String>, String> {
+    let args = build_rclone_lsf_args(prefs, destination_folder_id, sa_path);
+    let output = Command::new(&prefs.rclone_path)
+        .args(&args)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run rclone lsf: {e}"))?;
+    if !output.status.success() {
+        return Err("Failed to list remote folders".to_string());
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        let mut parts = line.splitn(2, '\t');
+        let id = parts.next().unwrap_or("").trim();
+        let path = parts.next().unwrap_or("").trim();
+        let name = path.trim_end_matches('/');
+        if !id.is_empty() && name == folder_name {
+            return Ok(Some(id.to_string()));
+        }
+    }
+    Ok(None)
+}
+
+async fn ensure_remote_dirs(
+    control: &UploadControlHandle,
+    prefs: &RclonePreferences,
+    sa_path: &Path,
+    destination_folder_id: &str,
+    item_id: &str,
+    dirs: &[String],
+) -> Result<(), String> {
+    for dir in dirs {
+        if control.is_canceled() || is_item_canceled(control, item_id) {
+            return Err("Upload canceled".to_string());
+        }
+        let args = build_rclone_mkdir_args(prefs, destination_folder_id, dir, sa_path);
+        #[cfg(windows)]
+        let mut command = {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            let mut std_command = std::process::Command::new(&prefs.rclone_path);
+            std_command
+                .args(&args)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .creation_flags(CREATE_NO_WINDOW);
+            Command::from(std_command)
+        };
+        #[cfg(not(windows))]
+        let mut command = {
+            let mut command = Command::new(&prefs.rclone_path);
+            command
+                .args(&args)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            command
+        };
+
+        log::debug!(
+            target: "rclone",
+            "upload.mkdir dir={} cmd={} args={:?}",
+            dir,
+            prefs.rclone_path,
+            args
+        );
+
+        let status = command
+            .status()
+            .await
+            .map_err(|e| format!("Failed to run rclone mkdir: {e}"))?;
+        if !status.success() {
+            return Err(format!("Failed to create folder {dir}"));
+        }
+    }
+    Ok(())
+}
+
+fn build_rel_folder_dir_list(entries: &[FolderFileEntry]) -> Vec<String> {
+    let mut dirs = HashSet::new();
+    for entry in entries {
+        let rel_path = Path::new(&entry.rel_path);
+        let mut current = PathBuf::new();
+        if let Some(parent) = rel_path.parent() {
+            for component in parent.components() {
+                current.push(component);
+                let dir = current.to_string_lossy().to_string();
+                if !dir.is_empty() {
+                    dirs.insert(dir.replace('\\', "/"));
+                }
+            }
+        }
+    }
+    let mut list: Vec<String> = dirs.into_iter().collect();
+    list.sort_by(|a, b| a.len().cmp(&b.len()).then_with(|| a.cmp(b)));
+    list
 }
 
 fn load_service_account_files(folder: &str) -> Result<Vec<ServiceAccountFile>, String> {
