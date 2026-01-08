@@ -477,20 +477,20 @@ export function TransferTable({
     setRowSelection({})
   }
 
-  const handleOpenLogs = async () => {
-    if (logsPending) return
-    setLogsPending(true)
-    try {
-      const dir = await appLogDir()
-      const logPath = await join(dir, 'gdexplorer.log.txt')
-      await openPath(logPath)
-    } catch (error) {
-      logger.warn('Failed to open log file', { error: String(error) })
-      toast.error('Failed to open log file')
-    } finally {
-      setLogsPending(false)
-    }
-  }
+  // const handleOpenLogs = async () => {
+  //   if (logsPending) return
+  //   setLogsPending(true)
+  //   try {
+  //     const dir = await appLogDir()
+  //     const logPath = await join(dir, 'gdexplorer.log.txt')
+  //     await openPath(logPath)
+  //   } catch (error) {
+  //     logger.warn('Failed to open log file', { error: String(error) })
+  //     toast.error('Failed to open log file')
+  //   } finally {
+  //     setLogsPending(false)
+  //   }
+  // }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
