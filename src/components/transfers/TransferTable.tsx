@@ -383,11 +383,11 @@ export function TransferTable({
               ) : (
                 <span>{item.statusLabel}</span>
               )}
-              {item.saEmail ? (
+              {/* {item.saEmail ? (
                 <span className="text-[10px] text-muted-foreground">
                   {item.saEmail}
                 </span>
-              ) : null}
+              ) : null} */}
             </div>
           )
         },
