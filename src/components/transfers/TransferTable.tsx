@@ -8,8 +8,8 @@ import {
 } from 'react'
 import { Button } from '@/components/ui/button'
 import { invoke } from '@tauri-apps/api/core'
-import { appLogDir, join } from '@tauri-apps/api/path'
-import { openPath } from '@tauri-apps/plugin-opener'
+// import { appLogDir, join } from '@tauri-apps/api/path'
+// import { openPath } from '@tauri-apps/plugin-opener'
 import {
   flexRender,
   getCoreRowModel,
@@ -47,8 +47,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { toast } from 'sonner'
-import { logger } from '@/lib/logger'
+// import { toast } from 'sonner'
+// import { logger } from '@/lib/logger'
 
 function getPathName(path: string): string {
   const normalized = path.replace(/[/\\]+$/g, '')
@@ -239,7 +239,7 @@ export function TransferTable({
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const lastIndexRef = useRef<number | null>(null)
   const [expandedById, setExpandedById] = useState<Record<string, boolean>>({})
-  const [logsPending, setLogsPending] = useState(false)
+  // const [logsPending, setLogsPending] = useState(false)
 
   useEffect(() => {
     const valid = new Set(items.map(i => i.id))
