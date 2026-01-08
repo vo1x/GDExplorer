@@ -36,6 +36,12 @@ import {
   AlertTriangleIcon,
   ChevronRightIcon,
   ChevronDownIcon,
+  Trash2,
+  Pause,
+  Play,
+  BrushCleaning,
+  UploadCloud
+  
 } from 'lucide-react'
 import {
   Tooltip,
@@ -44,6 +50,7 @@ import {
 } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { logger } from '@/lib/logger'
+
 
 function getPathName(path: string): string {
   const normalized = path.replace(/[/\\]+$/g, '')
@@ -430,9 +437,11 @@ export function TransferTable({
 
   const handleDeleteSelected = () => {
     if (selectedIds.length === 0) return
-    const selectedPaths = new Set(
-      items.filter(item => selectedIds.includes(item.id)).map(item => item.path)
-    )
+    const selectedItems = items.filter(item => selectedIds.includes(item.id))
+    const selectedPaths = new Set(selectedItems.map(item => item.path))
+    invoke('cancel_items', { args: { itemIds: selectedIds } }).catch(() => {
+      // Ignore backend errors; UI still removes items.
+    })
     for (const path of selectedPaths) {
       useLocalUploadQueue.getState().remove(path)
     }
@@ -503,14 +512,18 @@ export function TransferTable({
             type="button"
             variant="default"
             size="sm"
+            
             onClick={() => onStartSelected(selectedIds)}
             disabled={selectedIds.length === 0}
+            className='bg-[#39B549] text-white '
           >
-            Start
+            <UploadCloud /> 
           </Button>
           <Button
             type="button"
             variant="secondary"
+            className='bg-yellow-500'
+            
             size="sm"
             onClick={() => onPauseSelected(selectedIds)}
             disabled={selectedIds.length === 0 || !isUploading}
@@ -522,17 +535,9 @@ export function TransferTable({
                   : 'Nothing is uploading'
             }
           >
-            Pause
+            <Pause fill='#fff'/>
           </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={() => setDeleteDialogOpen(true)}
-            disabled={selectedIds.length === 0}
-          >
-            Delete
-          </Button>
+          
           <Button
             type="button"
             variant="secondary"
@@ -548,9 +553,18 @@ export function TransferTable({
             }}
             disabled={!hasCompleted}
           >
-            Clear completed
+            <BrushCleaning/>
           </Button>
           <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            onClick={() => setDeleteDialogOpen(true)}
+            disabled={selectedIds.length === 0}
+          >
+            <Trash2 />
+          </Button>
+          {/* <Button
             type="button"
             variant="ghost"
             size="sm"
@@ -558,7 +572,7 @@ export function TransferTable({
             disabled={!hasAny}
           >
             Clear all
-          </Button>
+          </Button> */}
           <Button
             type="button"
             variant="ghost"
@@ -598,7 +612,7 @@ export function TransferTable({
                 }
               }}
             >
-              Delete
+                Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -701,6 +715,7 @@ export function TransferTable({
                     fileOrder.length > 0 ? (
                       fileOrder.map((filePath, index) => {
                         const progress = fileProgress[filePath]
+                        const saEmail = progress?.saEmail ?? null
                         const total =
                           typeof progress?.totalBytes === 'number'
                             ? progress.totalBytes
@@ -793,7 +808,7 @@ export function TransferTable({
                             <div
                               role="cell"
                               className={[
-                                'text-xs',
+                                'flex flex-col gap-0.5 text-xs',
                                 progressState === 'failed'
                                   ? 'text-red-300'
                                   : progressState === 'completed'
@@ -805,7 +820,12 @@ export function TransferTable({
                                         : 'text-muted-foreground',
                               ].join(' ')}
                             >
-                              {statusLabel}
+                              <span>{statusLabel}</span>
+                              {saEmail ? (
+                                <span className="text-[10px] text-muted-foreground">
+                                  {saEmail}
+                                </span>
+                              ) : null}
                             </div>
                             <div
                               role="cell"

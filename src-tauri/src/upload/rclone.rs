@@ -14,7 +14,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
-use tokio::sync::{mpsc, watch, Mutex};
+use tokio::sync::{mpsc, watch, Mutex, Semaphore};
 use walkdir::WalkDir;
 
 #[derive(Clone, Debug)]
@@ -31,6 +31,40 @@ struct ServiceAccountFile {
     path: PathBuf,
     email: Option<String>,
     last_used: u64,
+}
+
+#[derive(Clone, Debug)]
+struct FolderFileEntry {
+    path: PathBuf,
+    rel_path: String,
+    size: u64,
+}
+
+#[derive(Debug)]
+struct FolderProgressTracker {
+    total_bytes: u64,
+    current_bytes: u64,
+    by_file: HashMap<String, u64>,
+}
+
+impl FolderProgressTracker {
+    fn new(total_bytes: u64) -> Self {
+        Self {
+            total_bytes,
+            current_bytes: 0,
+            by_file: HashMap::new(),
+        }
+    }
+
+    fn update(&mut self, file_key: &str, bytes: u64) -> (u64, u64) {
+        let prev = self.by_file.insert(file_key.to_string(), bytes).unwrap_or(0);
+        if bytes >= prev {
+            self.current_bytes = self.current_bytes.saturating_add(bytes - prev);
+        } else {
+            self.current_bytes = self.current_bytes.saturating_sub(prev - bytes);
+        }
+        (self.current_bytes, self.total_bytes)
+    }
 }
 
 pub async fn run_rclone_job(
@@ -113,6 +147,7 @@ pub async fn run_rclone_job(
                     &app,
                     &control,
                     &prefs,
+                    max_concurrent,
                     &sa_pool,
                     &sa_tick,
                     &destination_folder_id,
@@ -188,12 +223,34 @@ async fn run_rclone_for_item(
     app: &AppHandle,
     control: &UploadControlHandle,
     prefs: &RclonePreferences,
+    max_concurrent: u8,
     sa_pool: &Arc<Mutex<Vec<ServiceAccountFile>>>,
     sa_tick: &Arc<AtomicU64>,
     destination_folder_id: &str,
     item: &QueueItemInput,
 ) -> Result<(), String> {
-    if let Some(file_list) = collect_file_list(item) {
+    if is_item_canceled(control, &item.id) {
+        return Err("Upload canceled".to_string());
+    }
+    let folder_entries = collect_folder_file_entries(item);
+    if let Some(entries) = folder_entries.as_ref() {
+        let file_list = entries
+            .iter()
+            .map(|entry| FileListEntry {
+                file_path: entry.path.to_string_lossy().to_string(),
+                total_bytes: entry.size,
+            })
+            .collect::<Vec<_>>();
+        if !file_list.is_empty() {
+            let _ = app.emit(
+                "upload:file_list",
+                FileListEvent {
+                    item_id: item.id.clone(),
+                    files: file_list,
+                },
+            );
+        }
+    } else if let Some(file_list) = collect_file_list(item) {
         let _ = app.emit(
             "upload:file_list",
             FileListEvent {
@@ -228,6 +285,21 @@ async fn run_rclone_for_item(
 
     wait_if_paused(control, &item.id).await?;
 
+    if let Some(entries) = folder_entries {
+        return run_rclone_for_folder_entries(
+            app,
+            control,
+            prefs,
+            max_concurrent,
+            sa_pool,
+            sa_tick,
+            destination_folder_id,
+            item,
+            entries,
+        )
+        .await;
+    }
+
     let max_attempts = {
         let guard = sa_pool.lock().await;
         guard.len().clamp(1, MAX_SA_ATTEMPTS)
@@ -236,6 +308,9 @@ async fn run_rclone_for_item(
     let mut tried: HashSet<PathBuf> = HashSet::new();
 
     loop {
+        if is_item_canceled(control, &item.id) {
+            return Err("Upload canceled".to_string());
+        }
         attempts += 1;
         let (sa_path, sa_email) =
             select_service_account_excluding(sa_pool, sa_tick, &tried).await?;
@@ -278,6 +353,167 @@ async fn run_rclone_for_item(
 }
 
 #[allow(clippy::too_many_arguments)]
+async fn run_rclone_for_folder_entries(
+    app: &AppHandle,
+    control: &UploadControlHandle,
+    prefs: &RclonePreferences,
+    max_concurrent: u8,
+    sa_pool: &Arc<Mutex<Vec<ServiceAccountFile>>>,
+    sa_tick: &Arc<AtomicU64>,
+    destination_folder_id: &str,
+    item: &QueueItemInput,
+    entries: Vec<FolderFileEntry>,
+) -> Result<(), String> {
+    if entries.is_empty() {
+        return Ok(());
+    }
+
+    let total_bytes: u64 = entries.iter().map(|entry| entry.size).sum();
+    if total_bytes > 0 {
+        emit_progress(app, item, 0, total_bytes).await;
+    }
+
+    let dest_base = resolve_folder_dest_base(item);
+    let concurrency = max_concurrent.clamp(1, 10) as usize;
+    let semaphore = Arc::new(Semaphore::new(concurrency.max(1)));
+    let progress_tracker = Arc::new(Mutex::new(FolderProgressTracker::new(total_bytes)));
+    let last_sa_email = Arc::new(Mutex::new(None::<String>));
+    let mut tasks = tokio::task::JoinSet::new();
+
+    for entry in entries {
+        if control.is_canceled() {
+            return Err("Upload canceled".to_string());
+        }
+        if is_item_canceled(control, &item.id) {
+            return Err("Upload canceled".to_string());
+        }
+
+        let permit = semaphore
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| "Upload canceled".to_string())?;
+
+        let app = app.clone();
+        let control = control.clone();
+        let prefs = prefs.clone();
+        let sa_pool = sa_pool.clone();
+        let sa_tick = sa_tick.clone();
+        let destination_folder_id = destination_folder_id.to_string();
+        let item = item.clone();
+        let progress_tracker = progress_tracker.clone();
+        let last_sa_email = last_sa_email.clone();
+        let dest_base = dest_base.clone();
+
+        tasks.spawn(async move {
+            let _permit = permit;
+            let dest_dir = build_folder_dest_dir(&dest_base, &entry.rel_path);
+            let max_attempts = {
+                let guard = sa_pool.lock().await;
+                guard.len().clamp(1, MAX_SA_ATTEMPTS)
+            };
+            let mut attempts = 0_usize;
+            let mut tried: HashSet<PathBuf> = HashSet::new();
+
+            loop {
+                if is_item_canceled(&control, &item.id) || control.is_canceled() {
+                    return Err("Upload canceled".to_string());
+                }
+                attempts += 1;
+                let (sa_path, sa_email) =
+                    select_service_account_excluding(&sa_pool, &sa_tick, &tried).await?;
+                tried.insert(sa_path.clone());
+
+                let result = run_rclone_for_file(
+                    &app,
+                    &control,
+                    &prefs,
+                    &sa_path,
+                    sa_email.clone(),
+                    &destination_folder_id,
+                    &item,
+                    &entry.path,
+                    entry.size,
+                    &dest_dir,
+                    progress_tracker.clone(),
+                )
+                .await;
+
+                match result {
+                    Ok(()) => {
+                        if let Some(sa_email) = sa_email {
+                            let mut guard = last_sa_email.lock().await;
+                            *guard = Some(sa_email);
+                        }
+                        return Ok(());
+                    }
+                    Err(err) => {
+                        let retryable = is_retryable_error(&err);
+                        log::warn!(
+                            target: "rclone",
+                            "upload.attempt_failed id={} file={} attempt={}/{} retryable={} error={}",
+                            item.id,
+                            entry.path.to_string_lossy(),
+                            attempts,
+                            max_attempts,
+                            retryable,
+                            err
+                        );
+                        if !retryable || attempts >= max_attempts {
+                            return Err(format!(
+                                "Failed to upload {}: {}",
+                                entry.path.to_string_lossy(),
+                                err
+                            ));
+                        }
+                        tokio::time::sleep(Duration::from_millis(
+                            RETRY_BACKOFF_MS.saturating_mul(attempts as u64),
+                        ))
+                        .await;
+                    }
+                }
+            }
+        });
+    }
+
+    let mut first_error: Option<String> = None;
+    while let Some(result) = tasks.join_next().await {
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => {
+                if first_error.is_none() {
+                    first_error = Some(err);
+                }
+            }
+            Err(err) => {
+                if first_error.is_none() {
+                    first_error = Some(format!("Upload task failed: {err}"));
+                }
+            }
+        }
+    }
+
+    if let Some(err) = first_error {
+        return Err(err);
+    }
+
+    let sa_email = last_sa_email.lock().await.clone();
+    let _ = app.emit(
+        "upload:item_status",
+        ItemStatusEvent {
+            item_id: item.id.clone(),
+            path: item.path.clone(),
+            kind: item.kind.clone(),
+            status: "done".to_string(),
+            message: None,
+            sa_email,
+        },
+    );
+
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn run_rclone_command(
     app: &AppHandle,
     control: &UploadControlHandle,
@@ -288,6 +524,9 @@ async fn run_rclone_command(
     item: &QueueItemInput,
 ) -> Result<(), String> {
     if control.is_canceled() {
+        return Err("Upload canceled".to_string());
+    }
+    if is_item_canceled(control, &item.id) {
         return Err("Upload canceled".to_string());
     }
 
@@ -379,6 +618,9 @@ async fn run_rclone_command(
 
     while let Some(line) = line_rx.recv().await {
         log::debug!(target: "rclone", "{}", line);
+        if is_item_canceled(control, &item.id) {
+            return Err("Upload canceled".to_string());
+        }
         if let Some(msg) = extract_error_message(&line) {
             last_error = Some(msg);
         }
@@ -390,7 +632,15 @@ async fn run_rclone_command(
                 };
                 if should_emit {
                     last_file_progress.insert(file_path.clone(), (bytes, total));
-                    emit_file_progress(app, item, &file_path, bytes, total).await;
+                    emit_file_progress(
+                        app,
+                        item,
+                        &file_path,
+                        bytes,
+                        total,
+                        sa_email.clone(),
+                    )
+                    .await;
                 }
             }
         }
@@ -451,6 +701,203 @@ async fn run_rclone_command(
     Err(message)
 }
 
+#[allow(clippy::too_many_arguments)]
+async fn run_rclone_for_file(
+    app: &AppHandle,
+    control: &UploadControlHandle,
+    prefs: &RclonePreferences,
+    sa_path: &Path,
+    sa_email: Option<String>,
+    destination_folder_id: &str,
+    item: &QueueItemInput,
+    file_path: &Path,
+    file_size: u64,
+    dest_dir: &str,
+    progress_tracker: Arc<Mutex<FolderProgressTracker>>,
+) -> Result<(), String> {
+    if control.is_canceled() {
+        return Err("Upload canceled".to_string());
+    }
+    if is_item_canceled(control, &item.id) {
+        return Err("Upload canceled".to_string());
+    }
+
+    let _ = app.emit(
+        "upload:item_status",
+        ItemStatusEvent {
+            item_id: item.id.clone(),
+            path: item.path.clone(),
+            kind: item.kind.clone(),
+            status: "uploading".to_string(),
+            message: None,
+            sa_email: sa_email.clone(),
+        },
+    );
+
+    let file_path_string = file_path.to_string_lossy().to_string();
+    let file_item = QueueItemInput {
+        id: item.id.clone(),
+        path: file_path_string.clone(),
+        kind: "file".to_string(),
+        dest_path: Some(dest_dir.to_string()),
+    };
+    let args = build_rclone_args(prefs, destination_folder_id, &file_item, sa_path);
+
+    #[cfg(windows)]
+    let mut command = {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let mut std_command = std::process::Command::new(&prefs.rclone_path);
+        std_command
+            .args(&args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .creation_flags(CREATE_NO_WINDOW);
+        Command::from(std_command)
+    };
+    #[cfg(not(windows))]
+    let mut command = {
+        let mut command = Command::new(&prefs.rclone_path);
+        command
+            .args(&args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        command
+    };
+
+    log::debug!(
+        target: "rclone",
+        "upload.exec id={} cmd={} args={:?}",
+        item.id,
+        prefs.rclone_path,
+        args
+    );
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("Failed to start rclone: {e}"))?;
+
+    let pid = child
+        .id()
+        .ok_or_else(|| "Failed to get rclone process id".to_string())?;
+
+    let (done_tx, done_rx) = watch::channel(false);
+    let pause_task = tokio::spawn(monitor_pause_state(
+        app.clone(),
+        control.clone(),
+        item.clone(),
+        pid,
+        done_rx,
+    ));
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "Missing stdout".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "Missing stderr".to_string())?;
+
+    let (line_tx, mut line_rx) = mpsc::channel::<String>(256);
+    let stdout_task = tokio::spawn(read_rclone_stream(stdout, line_tx.clone()));
+    let stderr_task = tokio::spawn(read_rclone_stream(stderr, line_tx.clone()));
+    drop(line_tx);
+
+    let progress_re = progress_regex();
+    let mut last_bytes = 0_u64;
+    let mut last_total = 0_u64;
+    let mut last_error: Option<String> = None;
+
+    emit_file_progress(
+        app,
+        item,
+        &file_path_string,
+        0,
+        file_size,
+        sa_email.clone(),
+    )
+    .await;
+    let (total_sent, total_size) = {
+        let mut guard = progress_tracker.lock().await;
+        guard.update(&file_path_string, 0)
+    };
+    if total_size > 0 {
+        emit_progress(app, item, total_sent, total_size).await;
+    }
+
+    while let Some(line) = line_rx.recv().await {
+        log::debug!(target: "rclone", "{}", line);
+        if is_item_canceled(control, &item.id) {
+            return Err("Upload canceled".to_string());
+        }
+        if let Some(msg) = extract_error_message(&line) {
+            last_error = Some(msg);
+        }
+        if let Some((bytes, total)) = parse_json_progress(&line, &file_path_string)
+            .or_else(|| parse_progress_line(&progress_re, &line))
+        {
+            if bytes != last_bytes || total != last_total {
+                last_bytes = bytes;
+                last_total = total;
+                emit_file_progress(
+                    app,
+                    item,
+                    &file_path_string,
+                    bytes,
+                    total,
+                    sa_email.clone(),
+                )
+                .await;
+                let (total_sent, total_size) = {
+                    let mut guard = progress_tracker.lock().await;
+                    guard.update(&file_path_string, bytes)
+                };
+                if total_size > 0 {
+                    emit_progress(app, item, total_sent, total_size).await;
+                }
+            }
+        }
+    }
+
+    let _ = stdout_task.await;
+    let _ = stderr_task.await;
+
+    let _ = done_tx.send(true);
+    let _ = pause_task.await;
+
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| format!("Failed to wait for rclone: {e}"))?;
+
+    if control.is_canceled() {
+        return Err("Upload canceled".to_string());
+    }
+
+    if status.success() {
+        emit_file_progress(
+            app,
+            item,
+            &file_path_string,
+            file_size,
+            file_size,
+            sa_email.clone(),
+        )
+        .await;
+        let (total_sent, total_size) = {
+            let mut guard = progress_tracker.lock().await;
+            guard.update(&file_path_string, file_size)
+        };
+        if total_size > 0 {
+            emit_progress(app, item, total_sent, total_size).await;
+        }
+        return Ok(());
+    }
+
+    let message = last_error.unwrap_or_else(|| format!("Rclone failed with status: {status}"));
+    Err(message)
+}
+
 async fn emit_progress(app: &AppHandle, item: &QueueItemInput, bytes: u64, total: u64) {
     log::debug!(
         target: "rclone",
@@ -476,6 +923,7 @@ async fn emit_file_progress(
     file_path: &str,
     bytes: u64,
     total: u64,
+    sa_email: Option<String>,
 ) {
     let _ = app.emit(
         "upload:file_progress",
@@ -484,6 +932,7 @@ async fn emit_file_progress(
             file_path: file_path.to_string(),
             bytes_sent: bytes,
             total_bytes: total,
+            sa_email,
         },
     );
 }
@@ -535,6 +984,7 @@ async fn monitor_pause_state(
     let _pid = pid;
     let mut pause_all_rx = control.pause_rx.clone();
     let mut paused_items_rx = control.paused_items_rx.clone();
+    let mut canceled_items_rx = control.canceled_items_rx.clone();
     let mut is_paused = false;
 
     loop {
@@ -543,6 +993,23 @@ async fn monitor_pause_state(
         }
 
         if control.is_canceled() {
+            log::debug!(target: "rclone", "upload.cancel id={}", item.id);
+            #[cfg(unix)]
+            {
+                let _ = signal_process(pid, libc::SIGTERM);
+            }
+            #[cfg(windows)]
+            {
+                log::debug!(
+                    target: "rclone",
+                    "upload.cancel skipped on Windows id={}",
+                    item.id
+                );
+            }
+            break;
+        }
+
+        if canceled_items_rx.borrow().contains(&item.id) {
             log::debug!(target: "rclone", "upload.cancel id={}", item.id);
             #[cfg(unix)]
             {
@@ -605,10 +1072,15 @@ async fn monitor_pause_state(
         tokio::select! {
             _ = pause_all_rx.changed() => {}
             _ = paused_items_rx.changed() => {}
+            _ = canceled_items_rx.changed() => {}
             _ = done_rx.changed() => {}
             _ = tokio::time::sleep(Duration::from_millis(200)) => {}
         }
     }
+}
+
+fn is_item_canceled(control: &UploadControlHandle, item_id: &str) -> bool {
+    control.canceled_items_rx.borrow().contains(item_id)
 }
 
 fn build_rclone_args(
@@ -851,6 +1323,67 @@ fn collect_file_list(item: &QueueItemInput) -> Option<Vec<FileListEntry>> {
         None
     } else {
         Some(files)
+    }
+}
+
+fn collect_folder_file_entries(item: &QueueItemInput) -> Option<Vec<FolderFileEntry>> {
+    if item.kind != "folder" {
+        return None;
+    }
+
+    let base = PathBuf::from(&item.path);
+    let mut entries = Vec::new();
+
+    for entry in WalkDir::new(&base).into_iter().filter_map(Result::ok) {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let path = entry.path().to_path_buf();
+        let rel_path = path
+            .strip_prefix(&base)
+            .ok()
+            .and_then(|p| p.to_str())
+            .map(|p| p.replace('\\', "/"))
+            .unwrap_or_else(|| path.to_string_lossy().to_string());
+        if let Ok(metadata) = std::fs::metadata(&path) {
+            entries.push(FolderFileEntry {
+                path,
+                rel_path,
+                size: metadata.len(),
+            });
+        }
+    }
+
+    if entries.is_empty() {
+        None
+    } else {
+        Some(entries)
+    }
+}
+
+fn resolve_folder_dest_base(item: &QueueItemInput) -> String {
+    if let Some(dest_path) = item.dest_path.as_ref() {
+        return dest_path.clone();
+    }
+    Path::new(&item.path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("folder")
+        .to_string()
+}
+
+fn build_folder_dest_dir(base: &str, rel_path: &str) -> String {
+    let rel_dir = Path::new(rel_path)
+        .parent()
+        .and_then(|p| p.to_str())
+        .unwrap_or("")
+        .replace('\\', "/");
+    if rel_dir.is_empty() {
+        base.to_string()
+    } else if base.is_empty() {
+        rel_dir
+    } else {
+        format!("{}/{}", base, rel_dir)
     }
 }
 

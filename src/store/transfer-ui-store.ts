@@ -16,6 +16,7 @@ export interface TransferMetrics {
 export interface FileProgress {
   bytesSent: number
   totalBytes: number
+  saEmail?: string | null
 }
 
 export interface FileProgressByPath extends FileProgress {
@@ -48,7 +49,8 @@ interface TransferUiState {
     itemId: string,
     filePath: string,
     bytesSent: number,
-    totalBytes: number
+    totalBytes: number,
+    saEmail?: string | null
   ) => void
   recordFileList: (itemId: string, files: FileProgressByPath[]) => void
   clearFileProgress: (itemIds: string[]) => void
@@ -101,7 +103,7 @@ export const useTransferUiStore = create<TransferUiState>((set, get) => ({
       return { pausedById: next }
     }),
 
-  recordFileProgress: (itemId, filePath, bytesSent, totalBytes) =>
+  recordFileProgress: (itemId, filePath, bytesSent, totalBytes, saEmail) =>
     set(state => {
       const trimmed = filePath.trim()
       if (!trimmed) return state
@@ -122,6 +124,8 @@ export const useTransferUiStore = create<TransferUiState>((set, get) => ({
       nextByItem[resolvedKey] = {
         bytesSent,
         totalBytes,
+        saEmail:
+          saEmail ?? existingByItem?.[resolvedKey]?.saEmail ?? null,
       }
 
       const nextOrder = isNewFile

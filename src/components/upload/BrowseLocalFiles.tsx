@@ -32,7 +32,9 @@ export function BrowseLocalFiles() {
   const { destinationError, destinationFolderId } = useUploadDestinationStore()
   const [isBrowsing, setIsBrowsing] = useState(false)
   const [isDropActive, setIsDropActive] = useState(false)
-  const [isUploading, setIsUploading] = useState(false)
+  const isUploading = items.some(item =>
+    ['uploading', 'preparing', 'paused'].includes(item.status ?? 'queued')
+  )
 
   const handleBrowse = async () => {
     if (isBrowsing) return
@@ -95,9 +97,11 @@ export function BrowseLocalFiles() {
         filePath: string
         bytesSent: number
         totalBytes: number
+        saEmail?: string | null
       }>('upload:file_progress', event => {
-        const { itemId, filePath, bytesSent, totalBytes } = event.payload
-        recordFileProgress(itemId, filePath, bytesSent, totalBytes)
+        const { itemId, filePath, bytesSent, totalBytes, saEmail } =
+          event.payload
+        recordFileProgress(itemId, filePath, bytesSent, totalBytes, saEmail)
       })
 
       unlistenFileList = await listen<{
@@ -118,7 +122,6 @@ export function BrowseLocalFiles() {
       unlistenCompleted = await listen<{
         summary: { total: number; succeeded: number; failed: number }
       }>('upload:completed', event => {
-        setIsUploading(false)
         const { total, succeeded, failed } = event.payload.summary
         toast.success('Upload completed', {
           description: `${succeeded}/${total} succeeded, ${failed} failed`,
@@ -130,7 +133,6 @@ export function BrowseLocalFiles() {
         stage: string
         saEmail?: string | null
       }>('upload:error_banner', event => {
-        setIsUploading(false)
         toast.error('Upload blocked', { description: event.payload.message })
       })
 
@@ -278,8 +280,6 @@ export function BrowseLocalFiles() {
       })
       return
     }
-
-    setIsUploading(true)
 
     clearFileProgress(startable.map(i => i.id))
     resetItemsUploadState(startable.map(i => i.id))

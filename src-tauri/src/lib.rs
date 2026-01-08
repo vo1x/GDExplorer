@@ -17,16 +17,19 @@ struct UploadControl {
     cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pause_tx: tokio::sync::watch::Sender<bool>,
     paused_items_tx: tokio::sync::watch::Sender<HashSet<String>>,
+    canceled_items_tx: tokio::sync::watch::Sender<HashSet<String>>,
 }
 
 impl UploadControl {
     fn new() -> Self {
         let (pause_tx, _pause_rx) = tokio::sync::watch::channel(false);
         let (paused_items_tx, _paused_items_rx) = tokio::sync::watch::channel(HashSet::new());
+        let (canceled_items_tx, _canceled_items_rx) = tokio::sync::watch::channel(HashSet::new());
         Self {
             cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             pause_tx,
             paused_items_tx,
+            canceled_items_tx,
         }
     }
 
@@ -58,11 +61,23 @@ impl UploadControl {
         let _ = self.paused_items_tx.send(next);
     }
 
+    fn cancel_items(&self, item_ids: &[String]) {
+        if item_ids.is_empty() {
+            return;
+        }
+        let mut next = self.canceled_items_tx.borrow().clone();
+        for id in item_ids {
+            next.insert(id.clone());
+        }
+        let _ = self.canceled_items_tx.send(next);
+    }
+
     fn handle(&self) -> upload::scheduler::UploadControlHandle {
         upload::scheduler::UploadControlHandle {
             cancel: self.cancel.clone(),
             pause_rx: self.pause_tx.subscribe(),
             paused_items_rx: self.paused_items_tx.subscribe(),
+            canceled_items_rx: self.canceled_items_tx.subscribe(),
         }
     }
 }
@@ -99,6 +114,12 @@ struct StartUploadArgs {
 struct PauseItemsArgs {
     item_ids: Vec<String>,
     paused: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CancelItemsArgs {
+    item_ids: Vec<String>,
 }
 
 #[tauri::command]
@@ -184,6 +205,19 @@ async fn pause_items(
         return Ok(());
     };
     control.set_items_paused(&args.item_ids, args.paused);
+    Ok(())
+}
+
+#[tauri::command]
+async fn cancel_items(
+    state: State<'_, UploadControlState>,
+    args: CancelItemsArgs,
+) -> Result<(), String> {
+    let guard = state.0.lock().await;
+    let Some(control) = guard.as_ref() else {
+        return Ok(());
+    };
+    control.cancel_items(&args.item_ids);
     Ok(())
 }
 
@@ -903,6 +937,7 @@ pub fn run() {
             start_upload,
             pause_upload,
             pause_items,
+            cancel_items,
             cancel_upload,
             list_item_files,
             rclone_tools::install_rclone_windows,

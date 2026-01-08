@@ -27,6 +27,7 @@ pub struct FileProgressEvent {
     pub file_path: String,
     pub bytes_sent: u64,
     pub total_bytes: u64,
+    pub sa_email: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
